@@ -295,13 +295,6 @@ config BATTERY_MSM
 	help
 	  Say Y to enable support for the battery in Qualcomm MSM.
 
-config BATTERY_MSM_JENA
-	tristate "MSM legacy battery for Samsung Jena"
-	depends on ARCH_MSM
-	default m
-	help
-	  Say Y to enable support for the battery in Qualcomm MSM.
-
 config BATTERY_MSM8X60
 	tristate "MSM8X60 battery"
 	select PMIC8XXX_BATTALARM
