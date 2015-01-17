@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm 3.4.83 Kernel Configuration
+# Linux/arm 3.4.83-sm Kernel Configuration
 #
 CONFIG_ARM=y
 CONFIG_ARM_HAS_SG_CHAIN=y
@@ -1778,6 +1778,7 @@ CONFIG_BATTERY_MSM=y
 # CONFIG_BATTERY_MSM8X60 is not set
 # CONFIG_SMB137B_CHARGER is not set
 # CONFIG_SMB349_CHARGER is not set
+# CONFIG_BATTERY_MSM_FAKE is not set
 # CONFIG_BATTERY_BQ27520 is not set
 # CONFIG_BATTERY_BQ27541 is not set
 # CONFIG_LTC4088_CHARGER is not set
