@@ -32,7 +32,7 @@
 #include <linux/fsaxxxx_usbsw.h>
 #include <linux/atomic.h>
 #include <mach/msm_rpcrouter.h>
-#include <mach/msm_battery_jena.h>
+#include <mach/msm_battery.h>
 #include <mach/bq27425_fuelguage.h>
 #include <mach/proc_comm.h>
 #include <mach/pmic.h>
@@ -1854,7 +1854,7 @@ static int msm_batt_check_full_charging(int chg_current_adc)
 {
 	static unsigned int time_after_under_tsh;
 
-#if defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_TREBON)
 	if (msm_batt_info.charging_source == NO_CHG)
 		return 0;
 #else
@@ -1868,7 +1868,7 @@ static int msm_batt_check_full_charging(int chg_current_adc)
 			__func__, msm_batt_info.batt_recharging);
 		msm_batt_info.batt_full_check = 1;
 		msm_batt_info.batt_recharging = 0;
-#if defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_TREBON)
 		if (msm_batt_info.battery_vol >= 4100) {
 			msm_batt_info.batt_status = POWER_SUPPLY_STATUS_FULL;
 			msm_batt_info.batt_capacity = 100;
@@ -1882,7 +1882,7 @@ static int msm_batt_check_full_charging(int chg_current_adc)
 		return 1;
 	}
 
-#if defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_TREBON)
 	if (chg_current_adc == 0)
 		return 0;
 #endif
@@ -1941,7 +1941,7 @@ static int msm_batt_check_recharging(void)
 			pr_info("[BATT] %s: Recharging ! (voltage1 = %d)\n",
 				__func__, msm_batt_info.battery_vol);
 			msm_batt_info.batt_recharging = 1;
-#if defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_TREBON)
 		if (msm_batt_info.battery_vol < 4000)
 			msm_batt_info.batt_status = POWER_SUPPLY_STATUS_CHARGING;
 #endif
@@ -1961,7 +1961,7 @@ static int msm_batt_check_recharging(void)
 			pr_info("[BATT] %s: Recharging ! (voltage2 = %d)\n",
 				__func__, msm_batt_info.battery_vol);
 			msm_batt_info.batt_recharging = 1;
-#if defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_TREBON)
 		if (msm_batt_info.battery_vol < 4000)
 			msm_batt_info.batt_status = POWER_SUPPLY_STATUS_CHARGING;
 #endif
