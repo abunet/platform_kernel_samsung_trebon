@@ -138,7 +138,7 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit)
 {
 	u8 *ptr_mac;
 	int i, ret;
-#if defined(CONFIG_MACH_PX) || defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_PX) || defined(CONFIG_MACH_TREBON)
 	unsigned int softmac[6];
 #endif
 
@@ -162,8 +162,8 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit)
 		   ptr_mac[0], ptr_mac[1], ptr_mac[2],
 		   ptr_mac[3], ptr_mac[4], ptr_mac[5]);
 
-#if defined(CONFIG_MACH_PX) || defined(CONFIG_MACH_JENA)
-#ifdef CONFIG_MACH_JENA
+#if defined(CONFIG_MACH_PX) || defined(CONFIG_MACH_TREBON)
+#ifdef CONFIG_MACH_TREBON
 	ret = ath6kl_fetch_mac_file(ar);
 #else
 	ret = ath6kl_fetch_nvmac_info(ar);
@@ -193,7 +193,7 @@ void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit)
 	printk("MAC from ptr_mac %02X:%02X:%02X:%02X:%02X:%02X\n",
 			ptr_mac[0], ptr_mac[1], ptr_mac[2],
 			ptr_mac[3], ptr_mac[4], ptr_mac[5]);
-#ifdef CONFIG_MACH_JENA
+#ifdef CONFIG_MACH_TREBON
 	kfree(ath6kl_softmac);
 #else
 	vfree(ath6kl_softmac);

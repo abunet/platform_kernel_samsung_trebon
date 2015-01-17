@@ -18,7 +18,7 @@ config MT9T013
 	  MICRON 3M Bayer Sensor with AutoFocus
 config MT9V113
 	bool "Sensor mt9v113 (YUV 1.3M)"
-	default n	  
+	default y	  
 config MT9D113
 	bool "Sensor mt9d113 (YUV 2M)"
 	depends on MSM_CAMERA && ARCH_MSM8X60 && !MSM_CAMERA_V4L2
@@ -172,7 +172,7 @@ config DW9712_ACT
 
 config MSM_CAMERA_FLASH_SC628A
 	bool "Qualcomm MSM camera sc628a flash support"
-	depends on MSM_CAMERA
+	depends on MSM_CAMERA_LEGACY
 	default y
 	---help---
 	  Enable support for LED flash for msm camera.
@@ -191,7 +191,7 @@ config MSM_CAMERA_FLASH_TPS61310
 
 config S5K4ECGX
 	bool "Sensor S5K4ECGX (LSI 5M)"
-	default n
+	default y
 	---help---
 	  Support for IMX072 sony sensor driver.
 	  It is a Bayer 5MP sensor with auto focus and it supports

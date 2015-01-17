@@ -40,7 +40,7 @@
 
 #define SENSOR_DEBUG 0
 
-#if (CONFIG_MACH_TREBON_HWREV == 0x0) || (CONFIG_MACH_GEIM_HWREV == 0x0)
+#if (CONFIG_MACH_TREBON_HWREV == 0x0)
 #define CAM_FLASH_EN    58
 #define CAM_VGA_STBY	18
 #define CAM_VGA_RST	    98
