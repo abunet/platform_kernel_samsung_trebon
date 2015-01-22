@@ -272,6 +272,14 @@ config FB_MSM_LCDC_TOSHIBA_FWVGA_PT
 	select FB_MSM_LCDC_PANEL
 	default n
 
+config FB_MSM_LCDC_S6D16A0X_HVGA
+	bool
+	select FB_MSM_LCDC_PANEL
+	default n
+config FB_MSM_LCDC_TREBON_HVGA
+	bool
+	select FB_MSM_LCDC_PANEL
+	default n
 config FB_MSM_LCDC_SHARP_WVGA_PT
 	bool
 	select FB_MSM_LCDC_PANEL
@@ -297,16 +305,6 @@ config FB_MSM_LCDC_TRULY_HVGA_IPS3P2335_PT_PANEL
 
 
 config FB_MSM_LCDC_SAMSUNG_OLED_PT
-	bool
-	select FB_MSM_LCDC_PANEL
-	default n
-
-config FB_MSM_LCDC_TREBON_HVGA
-	bool
-	select FB_MSM_LCDC_PANEL
-	default n
-
-config FB_MSM_LCDC_GEIM_HVGA
 	bool
 	select FB_MSM_LCDC_PANEL
 	default n
@@ -507,12 +505,18 @@ config FB_MSM_LCDC_TOSHIBA_FWVGA_PT_PANEL
 	  Support for LCDC Toshiba FWVGA PT (480x864) panel. This
 	  configuration has to be selected to support the Toshiba
 	  FWVGA (480x864) portrait panel.
-
+config FB_MSM_LCDC_S6D16A0X_HVGA_PANEL
+	depends on FB_MSM_LCDC_HW
+	bool "FB MSM LCDC S6D16A0X HVGA Panel"
+	select FB_MSM_LCDC_S6D16A0X_HVGA
+	---help---
+	  Support for LCDC S6D16A0X HVGA (320x480) panel
+	  .
+	  .
 config FB_MSM_LCDC_TREBON_HVGA_PANEL
 	depends on FB_MSM_LCDC_HW
 	bool "FB MSM LCDC TREBON HVGA Panel"
 	select FB_MSM_LCDC_TREBON_HVGA
-	default n
 	---help---
 	  Support for LCDC TREBON HVGA (320x480) panel
 	  .
