@@ -19,9 +19,9 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/lcd.h>
-#include <linux/gpio.h>
+#include <mach/gpio.h>
 #include <mach/pmic.h>
-#include <linux/regulator/consumer.h>
+#include <mach/vreg.h>
 #include "msm_fb.h"
 
 #ifdef CONFIG_FB_MSM_TRY_MDDI_CATCH_LCDC_PRISM
@@ -38,8 +38,8 @@
 #define DPRINT(x...)
 #endif
 
-#define USE_STANDBY_MODE
-static int enabled = 0;
+#define USE_STANDBY_MODE /*temporary*/
+#define USE_AUO_SLEEP_MODE
 
 static int spi_cs;
 static int spi_sclk;
@@ -99,147 +99,202 @@ static char sleep_in_seq[1] = { 0x10 };
 static char sw_reset_seq[1] = { 0x01 };
 
 /*
-* Operating Sequence for SMD Panel
+* Operating Sequence for AUO Panel
 */
-static char set_open_password[3] = {
-	0xEF,
-	0x74, 0x20
+static char level_2_command[3] = {
+	0xF0,
+	0x5A, 0x5A
 };
 
-static char power_setting_seq1[10] = {
-	0xB1,
-	0x01, 0x00, 0x22, 0x11, 0x73,
-	0x70, 0xEC, 0x15, 0x2C
+static char mtp_dstb[3] = {
+	0xF1,
+	0x5A, 0x5A
 };
 
-static char power_setting_seq2[9] = {
-	0xB2,
-	0x66, 0x06, 0xAA, 0x88, 0x88,
-	0x08, 0x08, 0x03
+static char level_3_command[3] = {
+	0xFC,
+	0xA5, 0xA5
 };
 
-static char init_seq1[6] = {
-	0xB4,
-	0x10, 0x00, 0x32, 0x32, 0x32
+static char manpwrseq[8] = {
+	0xF3,
+	0x07, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x04
 };
 
-static char init_seq2[9] = {
-	0xB6,
-	0x74, 0x86, 0x22, 0x00, 0x22,
-	0x00, 0x22, 0x00
+static char pwrctrl[16] = {
+	0xF4,
+	0x02, 0x8E, 0x5D, 0x5D, 0x5D,
+	0x5D, 0x50, 0x32, 0x13, 0x54,
+	0x51, 0x11, 0x2A, 0x2A, 0xB2
 };
 
-static char init_seq3[4] = {
-	0xD5,
-	0x02, 0x43, 0x01
+static char disctrl[14] = {
+	0xF2,
+	0x3C, 0x7E, 0x03, 0x0B, 0x08,/* 0x18, 0x18,*/
+	0x02, 0x10, 0x00, 0x2F, 0x10,
+	0xC8, 0x5D, 0x5D
 };
 
-static char init_seq4[2] = {
-	/*
-	 * MADCTL
-	 * User setting (LDI Upside)
-	 */
-	0x36,
-	0x09
+static char srcctl[9] = {
+	0xF6,
+	0x29, 0x02, 0x0F, 0x00, 0x04,/*0x14,*/
+	0x44,/*0x77,*/ 0x44, 0x15
 };
 
-static char init_seq5[2] = {
-	/*
-	 * COLMOD
-	 * User setting (16M Color)
-	 */
+static char panelctl[9] = {
+	0xF8,
+	0x55, 0x00, 0x16, 0x11, 0x40,
+	0x00, 0x05, 0x0A
+};
+
+static char ifctl[5] = {
+	0xF7,
+	0x18,/*0x18,*/ 0x81, 0x10, 0x02
+};
+
+static char red_gamma_selection[2] = {
+	0xF9,
+	0x24
+};
+
+static char positive_gamma_control1[15] = {
+	0xFA,
+	0x1A, 0x25, 0x03, 0x03, 0x0E,
+	0x00, 0x00, 0x04, 0x2F, 0x25,
+	0x16, 0x18, 0x19, 0x01
+};
+
+static char negative_gamma_control1[15] = {
+	0xFB,
+	0x1A, 0x25, 0x03, 0x03, 0x0E,
+	0x00, 0x00, 0x04, 0x2F, 0x25,
+	0x16, 0x18, 0x19, 0x01
+};
+
+static char green_gamma_selection[2] = {
+	0xF9,
+	0x22
+};
+
+static char positive_gamma_control2[15] = {
+	0xFA,
+	0x00, 0x25, 0x15, 0x28, 0x32,
+	0x2A, 0x29, 0x28, 0x0F, 0x0C,
+	0x00, 0x00, 0x00, 0x01
+};
+
+static char negative_gamma_control2[15] = {
+	0xFB,
+	0x00, 0x25, 0x15, 0x28, 0x32,
+	0x2A, 0x29, 0x28, 0x0F, 0x0C,
+	0x00, 0x00, 0x00, 0x01
+};
+
+static char blue_gamma_selection[2] = {
+	0xF9,
+	0x21
+};
+
+static char positive_gamma_control3[15] = {
+	0xFA,
+	0x22, 0x25, 0x09, 0x16, 0x1A,
+	0x07, 0x06, 0x06, 0x2F, 0x29,
+	0x18, 0x1A, 0x1B, 0x01
+};
+
+static char negative_gamma_control3[15] = {
+	0xFB,
+	0x22, 0x25, 0x09, 0x16, 0x1A,
+	0x07, 0x06, 0x06, 0x2F, 0x29,
+	0x18, 0x1A, 0x1B, 0x01
+};
+
+static char interface_pixel_format[2] = {
 	0x3A,
 	0x77
 };
 
-static char init_seq6[2] = {
-	/*
-	 * SETPOL
-	 * User setting (DE / DCLK polarity)
-	 */
-	0xF3,
-	0x10
+static char column_address_set[5] = {
+	0x2A,
+	0x00, 0xF0, 0x01, 0x3F
 };
 
-/*Gamma Setting 2.6 */
-static char gamma_set_seq1[35] = {
-	/* Blue gamma */
-	0xE0,
-	0x4B, 0x49, 0x48, 0x12, 0x0C,
-	0x02, 0x3D, 0x37, 0x06, 0x0E,
-	0x0F, 0x14, 0x17, 0x16, 0x16,
-	0x10, 0x1E, 0x33, 0x33, 0x34,
-	0x11, 0x0C, 0x03, 0x31, 0x31,
-	0x07, 0x0E, 0x10, 0x14, 0x16,
-	0x15, 0x16, 0x11, 0x1E
+static char page_address_set[5] = {
+	0x2B,
+	0x00, 0x00, 0x01, 0xDF
 };
 
-static char gamma_set_seq2[35] = {
-	/* Green gamma */
-	0xE1,
-	0x1D, 0x24, 0x2B, 0x0D, 0x08,
-	0x03, 0x32, 0x33, 0x08, 0x0F,
-	0x10, 0x16, 0x18, 0x17, 0x18,
-	0x14, 0x1C, 0x02, 0x0C, 0x13,
-	0x09, 0x09, 0x00, 0x22, 0x30,
-	0x08, 0x0E, 0x11, 0x16, 0x18,
-	0x17, 0x17, 0x14, 0x1B
+static char zig_zag_inv_control[2] = {
+	0xED,
+	0x08
 };
 
-static char gamma_set_seq3[35] = {
-	/* Red gamma */
-	0xE2,
-	0x29, 0x2A, 0x2C, 0x0E, 0x0C,
-	0x03, 0x2E, 0x34, 0x07, 0x0C,
-	0x10, 0x16, 0x18, 0x17, 0x18,
-	0x13, 0x18, 0x0F, 0x12, 0x15,
-	0x0A, 0x09, 0x01, 0x1E, 0x2D,
-	0x07, 0x0C, 0x11, 0x16, 0x18,
-	0x17, 0x17, 0x12, 0x18
+static char write_control_display[2] = {
+	0x53,
+	0x24
 };
 
-static char set_close_password[3] = {
-	0xEF,
-	0x00, 0x00
+static char write_display_brightness[2] = {
+	0x51,
+	0xFF
 };
 
-static char deep_standby_en[2] = {
-	0xDE,
-	0x01
-};
+static struct spi_cmd_desc display_init_cmds[] = {
+	{sizeof(level_2_command), level_2_command, 0},
+	{sizeof(mtp_dstb), mtp_dstb, 0},
+	{sizeof(level_3_command), level_3_command, 0},
+	{sizeof(manpwrseq), manpwrseq, 0},
+	{sizeof(pwrctrl), pwrctrl, 0},
 
-static struct spi_cmd_desc display_on_cmds[] = {
-	{sizeof(set_open_password), set_open_password, 0},
-	{sizeof(power_setting_seq1), power_setting_seq1, 0},
-	{sizeof(power_setting_seq2), power_setting_seq2, 0},
+	{sizeof(sleep_out_seq), sleep_out_seq, 120},
 
-	{sizeof(init_seq1), init_seq1, 0},
-	{sizeof(init_seq2), init_seq2, 0},
-	{sizeof(init_seq3), init_seq3, 0},
-	{sizeof(init_seq4), init_seq4, 0},
-	{sizeof(init_seq5), init_seq5, 0},
-	{sizeof(init_seq6), init_seq6, 0},
+	{sizeof(disctrl), disctrl, 0},
+	{sizeof(srcctl), srcctl, 0},
+	{sizeof(panelctl), panelctl, 0},
+	{sizeof(ifctl), ifctl, 0},
 
-	{sizeof(gamma_set_seq1), gamma_set_seq1, 0},
-	{sizeof(gamma_set_seq2), gamma_set_seq2, 0},
-	{sizeof(gamma_set_seq3), gamma_set_seq3, 0},
+	{sizeof(red_gamma_selection), red_gamma_selection, 0},
+	{sizeof(positive_gamma_control1), positive_gamma_control1, 0},
+	{sizeof(negative_gamma_control1), negative_gamma_control1, 0},
+	{sizeof(green_gamma_selection), green_gamma_selection, 0},
+	{sizeof(positive_gamma_control2), positive_gamma_control2, 0},
+	{sizeof(negative_gamma_control2), negative_gamma_control2, 0},
+	{sizeof(blue_gamma_selection), blue_gamma_selection, 0},
 
-	{sizeof(set_close_password), set_close_password, 0},
-	{sizeof(disp_on_seq), disp_on_seq, 10},
+	{sizeof(positive_gamma_control3), positive_gamma_control3, 0},
+	{sizeof(negative_gamma_control3), negative_gamma_control3, 0},
+	{sizeof(interface_pixel_format), interface_pixel_format, 0},
+	{sizeof(column_address_set), column_address_set, 0},
+
+	{sizeof(page_address_set), page_address_set, 0},
+	{sizeof(zig_zag_inv_control), zig_zag_inv_control, 0},
+	{sizeof(write_control_display), write_control_display, 0},
+	{sizeof(write_display_brightness), write_display_brightness, 0},
+	{sizeof(disp_on_seq), disp_on_seq, 0},
 };
 
 static struct spi_cmd_desc display_off_cmds[] = {
 	{sizeof(disp_off_seq), disp_off_seq, 0},
+};
+static struct spi_cmd_desc display_on_cmds[] = {
+	{sizeof(disp_off_seq), disp_on_seq, 100},
+};
+
+static struct spi_cmd_desc display_sleep_in_cmds[] = {
+	{sizeof(disp_off_seq), disp_off_seq, 25},
 	{sizeof(sleep_in_seq), sleep_in_seq, 120},
 };
 
-static struct spi_cmd_desc display_standby_in_cmds[] = {
-	{sizeof(disp_off_seq), disp_off_seq, 0},
-	{sizeof(deep_standby_en), deep_standby_en, 0},
+static struct spi_cmd_desc display_sleep_out_cmds[] = {
+	{sizeof(sleep_out_seq), sleep_out_seq, 120},
+	{sizeof(disp_on_seq), disp_on_seq, 100},
 };
 
 static struct spi_cmd_desc sw_rdy_cmds[] = {
-	{sizeof(sleep_out_seq), sleep_out_seq, 0},
+	{sizeof(sw_reset_seq), sw_reset_seq, 10},
+/*	{sizeof(ifmode_set2), ifmode_set2, 0},*/
+/*	{sizeof(ifmode_set), ifmode_set, 0},*/
 };
 
 static void read_ldi_register(u8 addr, u8 *buf, int count)
@@ -423,58 +478,42 @@ static void spi_standby(void)
 
 }
 
-#define REGULATOR_ENABLE	1
-#define REGULATOR_DISABLE	0
+#define VREG_ENABLE	1
+#define VREG_DISABLE	0
 
-static void trebon_regulator_config(int regulator_en)
+static void trebon_vreg_config(int vreg_en)
 {
 	int rc;
-	struct regulator *regulator_lcd = NULL;
+	struct vreg *vreg_lcd = NULL;
 
-	if (regulator_lcd == NULL) {
-		regulator_lcd = regulator_get(NULL, "vlcd");
+	if (vreg_lcd == NULL) {
+		vreg_lcd = vreg_get(NULL, "vlcd");
 
-		if (IS_ERR(regulator_lcd)) {
-			printk(KERN_ERR "%s: regulator_get(%s) failed (%ld)\n",
-				__func__, "vlcd4", PTR_ERR(regulator_lcd));
+		if (IS_ERR(vreg_lcd)) {
+			printk(KERN_ERR "%s: vreg_get(%s) failed (%ld)\n",
+				__func__, "vlcd4", PTR_ERR(vreg_lcd));
 			return;
 		}
 
-		rc = regulator_set_voltage(regulator_lcd, 3000000, 3000000);
+		rc = vreg_set_level(vreg_lcd, 3000);
 		if (rc) {
-			printk(KERN_ERR "%s: LCD powerup: set_voltage failed (%d)\n",
+			printk(KERN_ERR "%s: LCD set_level failed (%d)\n",
 				__func__, rc);
 		}
 	}
 
-	if (regulator_en) {
-		printk("[LCDC_TREBON] About to turn on\n");
-		if(!enabled) {
-			printk("[LCDC_TREBON] Enable regulator\n");
-			enabled = 1;
-			rc = regulator_enable(regulator_lcd);
-			if (rc) {
-				printk(KERN_ERR "%s: LCD regulator enable failed (%d)\n",
-					 __func__, rc);
-			}
-		} else { printk("[LCDC_TREBON] Already enabled, how did this happen?\n"); }
+	if (vreg_en) {
+		rc = vreg_enable(vreg_lcd);
+		if (rc) {
+			printk(KERN_ERR "%s: LCD enable failed (%d)\n",
+				 __func__, rc);
+		}
 	} else {
-		printk("[LCDC_TREBON] About to turn off\n");
-		if(enabled) {
-			printk("[LCDC_TREBON] Disabling regulator\n");
-			enabled = 0;
-			rc = regulator_set_voltage(regulator_lcd, 3000000, 3000000);
-			if (rc) {
-				printk(KERN_ERR "%s: LCD powerdown: set_voltage failed (%d)\n",
-					__func__, rc);
-			}
-
-			rc = regulator_disable(regulator_lcd);
-			if (rc) {
-				printk(KERN_ERR "%s: LCD regulator disable failed (%d)\n",
-					 __func__, rc);
-			}
-		} else { printk("[LCDC_TREBON] Already disabled, how did this happen?\n"); }
+		rc = vreg_disable(vreg_lcd);
+		if (rc) {
+			printk(KERN_ERR "%s: LCD disable failed (%d)\n",
+				 __func__, rc);
+		}
 	}
 }
 
@@ -515,7 +554,8 @@ static void trebon_disp_powerup(void)
 
 	if (!disp_state.disp_powered_up && !disp_state.display_on) {
 
-		trebon_regulator_config(REGULATOR_ENABLE);
+		trebon_vreg_config(VREG_ENABLE);
+/*		msleep(10);*/
 		usleep(10000);
 		trebon_disp_reset(0);
 
@@ -532,29 +572,32 @@ static void trebon_disp_powerdown(void)
 					, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 	gpio_set_value(lcd_reset, 0);
 
-	trebon_regulator_config(REGULATOR_DISABLE);
-	msleep(1);
+	trebon_vreg_config(VREG_DISABLE);
+	usleep(1000);
 
 	disp_state.disp_powered_up = FALSE;
 }
 
-static void trebon_disp_on(void)
+static void trebon_disp_on_auo(void)
 {
 	DPRINT("start %s\n", __func__);
 
 	if (disp_state.disp_powered_up && !disp_state.display_on) {
 		DPRINT("HW rev is %d, apply %d's init sequence\n" ,
 			board_hw_revision, board_hw_revision);
-
-		spi_cmds_tx(display_on_cmds, ARRAY_SIZE(display_on_cmds));
-		msleep(40);
+#if !defined(USE_AUO_SLEEP_MODE)
+		spi_cmds_tx(display_off_cmds, ARRAY_SIZE(display_off_cmds));
+#else
+		spi_cmds_tx(display_sleep_out_cmds,
+			ARRAY_SIZE(display_sleep_out_cmds));
+#endif
 
 		DPRINT("display on cmd : completed\n");
 		disp_state.display_on = TRUE;
 	}
 }
 
-static int lcdc_trebon_panel_standby_in(struct platform_device *pdev)
+static int lcdc_trebon_auo_panel_standby_in(struct platform_device *pdev)
 {
 	DPRINT("start %s\n",  __func__);
 
@@ -563,9 +606,14 @@ static int lcdc_trebon_panel_standby_in(struct platform_device *pdev)
 		disable_irq_nosync(lcd_det_irq);
 		irq_disabled = TRUE;
 #endif
-		spi_cmds_tx(display_standby_in_cmds,
-				ARRAY_SIZE(display_standby_in_cmds));
-		msleep(70);
+
+#if !defined(USE_AUO_SLEEP_MODE)
+		spi_cmds_tx(display_off_cmds,
+				ARRAY_SIZE(display_off_cmds));
+#else
+		spi_cmds_tx(display_sleep_in_cmds,
+				ARRAY_SIZE(display_sleep_in_cmds));
+#endif
 
 		spi_standby();
 
@@ -576,11 +624,10 @@ static int lcdc_trebon_panel_standby_in(struct platform_device *pdev)
 	return 0;
 }
 
-static int lcdc_trebon_panel_standby_out(struct platform_device *pdev)
+static int lcdc_trebon_auo_panel_standby_out(struct platform_device *pdev)
 {
 	DPRINT("start %s\n", __func__);
 
-	msleep(50);
 	if (!disp_state.disp_initialized) {
 #ifdef ESD_RECOVERY
 		if (irq_disabled) {
@@ -591,16 +638,8 @@ static int lcdc_trebon_panel_standby_out(struct platform_device *pdev)
 
 	/*signal_timing*/
 		spi_standby();
-/*		msleep(10);*/
-		usleep(10000);
 
-		trebon_disp_reset(0);
-
-		spi_cmds_tx(sw_rdy_cmds, ARRAY_SIZE(sw_rdy_cmds));
-/*		msleep(10);*/
-		usleep(10000);
-
-		trebon_disp_on();
+		trebon_disp_on_auo();
 
 		disp_state.disp_initialized = TRUE;
 	}
@@ -613,7 +652,7 @@ static int lcdc_trebon_panel_on(struct platform_device *pdev)
 
 #ifdef USE_STANDBY_MODE
 	if (disp_state.standby)
-		lcdc_trebon_panel_standby_out(pdev);
+		lcdc_trebon_auo_panel_standby_out(pdev);
 #endif
 
 	return 0;
@@ -623,7 +662,7 @@ static int lcdc_trebon_panel_off(struct platform_device *pdev)
 {
 	DPRINT("start %s\n", __func__);
 
-	lcdc_trebon_panel_standby_in(pdev);
+	lcdc_trebon_auo_panel_standby_in(pdev);
 
 	disp_state.standby = TRUE;
 	return 0;
@@ -632,10 +671,37 @@ static int lcdc_trebon_panel_off(struct platform_device *pdev)
 static void lcdc_trebon_set_backlight(struct msm_fb_data_type *mfd)
 {
 	int bl_value = mfd->bl_level;
+	static int lockup_count;
 
-	printk("[BACKLIGHT] : %d\n",bl_value);
+	up(&backlight_sem);
+	DPRINT("[BACKLIGHT] : %d\n", bl_value);
+	if (!bl_value) {
+		/*  Turn off Backlight, don't check disp_initialized value */
+		lcd_prf = 1;
+
+	} else {
+		if (lcd_prf)
+			return;
+
+		while (!disp_state.disp_initialized) {
+			msleep(100);
+			lockup_count++;
+
+			if (lockup_count > 50) {
+				printk(KERN_ERR "Prevent infinite loop(wait for 5s)\n");
+				printk(KERN_ERR "LCD can't initialize"
+					" with in %d ms\n", lockup_count*100);
+				lockup_count = 0;
+
+				down(&backlight_sem);
+				return;
+			}
+		}
+	}
 
 	backlight_ic_set_brightness(bl_value);
+
+	down(&backlight_sem);
 }
 
 #ifdef ESD_RECOVERY
@@ -658,8 +724,6 @@ static void lcdc_dsip_reset_work(struct work_struct *work_ptr)
 	DPRINT("lcd reset\n");
 
 	lcdc_trebon_panel_off(NULL);
-
-	trebon_disp_reset(0);
 
 	lcdc_trebon_panel_on(NULL);
 
@@ -684,8 +748,8 @@ static ssize_t trebon_lcdtype_show(struct device *dev,
 	char temp[20];
 	DPRINT("start %s\n", __func__);
 
-	snprintf(temp, sizeof(temp), "SMD_LMS365DF04\n");
-	DPRINT("%s : SMD_LMS365DF04\n", __func__);
+	snprintf(temp, sizeof(temp), "AUO_H365QVN01\n");
+	DPRINT("AUO_H365QVN01\n");
 
 	strncat(buf, temp, sizeof(temp));
 	return strnlen(buf, sizeof(temp));
@@ -835,7 +899,7 @@ static int __init lcdc_trebon_panel_init(void)
 	struct msm_panel_info *pinfo;
 
 /*#ifdef CONFIG_FB_MSM_TRY_MDDI_CATCH_LCDC_PRISM*/
-	ret = msm_fb_detect_client("lcdc_trebon_smd_hvga");
+	ret = msm_fb_detect_client("lcdc_trebon_auo_hvga");
 	if (ret) {
 		DPRINT("%s:msm_fb_detect_client failed!\n", __func__);
 		return 0;
