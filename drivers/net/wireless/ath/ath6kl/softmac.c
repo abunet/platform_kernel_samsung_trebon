@@ -62,7 +62,7 @@ static void ath6kl_calculate_crc(u32 target_type, u8 *data, size_t len)
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "New Checksum: %u\n", checksum);
 }
 
-#if defined(CONFIG_MACH_PX) || defined(CONFIG_MACH_TREBON)
+#ifdef CONFIG_MACH_PX
 static int ath6kl_fetch_nvmac_info(struct ath6kl *ar)
 {
 	char softmac_filename[256];

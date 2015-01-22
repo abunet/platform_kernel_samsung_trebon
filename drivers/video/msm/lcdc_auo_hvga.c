@@ -19,7 +19,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/lcd.h>
-#include <mach/gpio.h>
+#include <asm/gpio.h>
 #include <mach/pmic.h>
 #include <mach/vreg.h>
 #include "msm_fb.h"
@@ -346,7 +346,7 @@ static void read_ldi_register(u8 addr, u8 *buf, int count)
 				gpio_set_value(spi_sclk, 0);
 				udelay(DEFAULT_USLEEP);
 				/* read bit */
-				if (gpio_get_value(spi_sdo))
+				if (gpio_get_value(spi_sdo)) 
 					buf[j] |= (0x1<<i);
 				else
 					buf[j] &= ~(0x1<<i);
