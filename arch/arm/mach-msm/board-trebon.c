@@ -1997,7 +1997,7 @@ void wlan_setup_power(int on, int detect)
 		if (wlan_set_gpio(GPIO_WLAN_RESET_N, 0))
 			return;
 
-		udelay(60);
+		udelay(100);
 
 #ifdef WLAN_33V_CONTROL_FOR_BT_ANTENNA
 		/* GPIO_WLAN_33V_EN - Off */
@@ -2164,8 +2164,8 @@ static struct sdcc_gpio sdcc_cfg_data[] = {
 		.sleep_cfg_data = sdc2_sleep_cfg_data,
 	},
 	{
-		.cfg_data = sdc3_cfg_data,
-		.size = ARRAY_SIZE(sdc3_cfg_data),
+/*		.cfg_data = sdc3_cfg_data,		*/
+/*		.size = ARRAY_SIZE(sdc3_cfg_data),	*/
 	},
 	{
 		.cfg_data = sdc4_cfg_data,
@@ -2515,17 +2515,109 @@ static const int msm_fb_lcdc_vreg_mV[] = {
 #define	GPIO_SPI_CLK		30
 #define	GPIO_SPI_CS		26
 #define	GPIO_SPI_SDI		57
-#define GPIO_SPI_SDO	23
 #define	GPIO_LCD_RESET_N	22
 #define	GPIO_LCD_DETECT		38
 
 struct vreg *lcdc_vreg[ARRAY_SIZE(msm_fb_lcdc_vreg)];
 
+#if 0 // toshiba panel
+static uint32_t lcdc_gpio_initialized;
+
+static void lcdc_toshiba_gpio_init(void)
+{
+	int i, rc = 0;
+	if (!lcdc_gpio_initialized) {
+		if (gpio_request(GPIO_SPI_CLK, "spi_clk")) {
+			pr_err("failed to request gpio spi_clk\n");
+			return;
+		}
+		if (gpio_request(GPIO_SPI_CS0_N, "spi_cs")) {
+			pr_err("failed to request gpio spi_cs0_N\n");
+			goto fail_gpio6;
+		}
+		if (gpio_request(GPIO_SPI_MOSI, "spi_mosi")) {
+			pr_err("failed to request gpio spi_mosi\n");
+			goto fail_gpio5;
+		}
+		if (gpio_request(GPIO_SPI_MISO, "spi_miso")) {
+			pr_err("failed to request gpio spi_miso\n");
+			goto fail_gpio4;
+		}
+		if (gpio_request(GPIO_DISPLAY_PWR_EN, "gpio_disp_pwr")) {
+			pr_err("failed to request gpio_disp_pwr\n");
+			goto fail_gpio3;
+		}
+		if (gpio_request(GPIO_BACKLIGHT_EN, "gpio_bkl_en")) {
+			pr_err("failed to request gpio_bkl_en\n");
+			goto fail_gpio2;
+		}
+		pmapp_disp_backlight_init();
+
+		for (i = 0; i < ARRAY_SIZE(msm_fb_lcdc_vreg); i++) {
+			lcdc_vreg[i] = vreg_get(0, msm_fb_lcdc_vreg[i]);
+
+			rc = vreg_set_level(lcdc_vreg[i],
+						msm_fb_lcdc_vreg_mV[i]);
+
+			if (rc < 0) {
+				pr_err("%s: set regulator level failed "
+					"with :(%d)\n", __func__, rc);
+				goto fail_gpio1;
+			}
+		}
+		lcdc_gpio_initialized = 1;
+	}
+	return;
+
+fail_gpio1:
+	for (; i > 0; i--)
+			vreg_put(lcdc_vreg[i - 1]);
+
+	gpio_free(GPIO_BACKLIGHT_EN);
+fail_gpio2:
+	gpio_free(GPIO_DISPLAY_PWR_EN);
+fail_gpio3:
+	gpio_free(GPIO_SPI_MISO);
+fail_gpio4:
+	gpio_free(GPIO_SPI_MOSI);
+fail_gpio5:
+	gpio_free(GPIO_SPI_CS0_N);
+fail_gpio6:
+	gpio_free(GPIO_SPI_CLK);
+	lcdc_gpio_initialized = 0;
+}
+
+static uint32_t lcdc_gpio_table[] = {
+	GPIO_SPI_CLK,
+	GPIO_SPI_CS0_N,
+	GPIO_SPI_MOSI,
+	GPIO_DISPLAY_PWR_EN,
+	GPIO_BACKLIGHT_EN,
+	GPIO_SPI_MISO,
+};
+
+static void config_lcdc_gpio_table(uint32_t *table, int len, unsigned enable)
+{
+	int n;
+
+	if (lcdc_gpio_initialized) {
+		/* All are IO Expander GPIOs */
+		for (n = 0; n < (len - 1); n++)
+			gpio_direction_output(table[n], 1);
+	}
+}
+
+static void lcdc_toshiba_config_gpios(int enable)
+{
+	config_lcdc_gpio_table(lcdc_gpio_table,
+		ARRAY_SIZE(lcdc_gpio_table), enable);
+}
+#endif
+
 static int lcdc_gpio_num[] = {
 	GPIO_SPI_CLK,
 	GPIO_SPI_CS,
 	GPIO_SPI_SDI,
-	GPIO_SPI_SDO,
 	GPIO_LCD_RESET_N,
 	GPIO_LCD_DETECT,
 };
@@ -2597,6 +2689,23 @@ static void config_lcdc_gpio_table(uint32_t *table, int len, unsigned enable)
 }
 static int msm_fb_lcdc_power_save(int on)
 {
+#if 0
+	/* struct vreg *vreg[ARRAY_SIZE(msm_fb_lcdc_vreg)]; */
+	int rc = 0;
+
+	/* Doing the init of the LCDC GPIOs very late as they are from
+		an I2C-controlled IO Expander */
+	lcdc_toshiba_gpio_init();
+
+	if (lcdc_gpio_initialized) {
+		gpio_set_value_cansleep(GPIO_DISPLAY_PWR_EN, on);
+		gpio_set_value_cansleep(GPIO_BACKLIGHT_EN, on);
+	}
+
+	pmapp_disp_backlight_init();
+	rc = pmapp_disp_backlight_set_brightness(100);
+
+#endif
     return 0;
 }
 
@@ -2663,6 +2772,7 @@ static void tsp_power_on(void)
 	gpio_tlmm_config(GPIO_CFG(78, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 	gpio_direction_output(78, 1);
 #endif
+//	printk("[TSP] touch_en : %d \n", gpio_get_value(78));
 }
 #endif
 
@@ -2679,75 +2789,59 @@ static void samsung_sys_class_init(void)
 
 }
 
+#if 0 // toshiba panel
+static int lcd_panel_spi_gpio_num[] = {
+		GPIO_SPI_MOSI,  /* spi_sdi */
+		GPIO_SPI_MISO,  /* spi_sdoi */
+		GPIO_SPI_CLK,   /* spi_clk */
+		GPIO_SPI_CS0_N, /* spi_cs  */
+};
+
+static struct msm_panel_common_pdata lcdc_toshiba_panel_data = {
+	.panel_config_gpio = lcdc_toshiba_config_gpios,
+	.pmic_backlight = lcdc_toshiba_set_bl,
+	.gpio_num	  = lcd_panel_spi_gpio_num,
+};
+
+static struct platform_device lcdc_toshiba_panel_device = {
+	.name   = "lcdc_toshiba_fwvga_pt",
+	.id     = 0,
+	.dev    = {
+		.platform_data = &lcdc_toshiba_panel_data,
+	}
+};
+#endif
+
 static struct resource msm_fb_resources[] = {
 	{
 		.flags  = IORESOURCE_DMA,
 	}
 };
 
-/*
-* The function of "update_panel_name()" is working for support
-* different lcd panel more than two. The operation of this function
-* is that get the panel name from command line that is pass on from
-* bootloader and update lcd id.
-*/
-static int __init update_panel_name(char *panel_name)
-{
-	int i;
-	char *src = panel_name;
-	char panel[2][4] = {"SMD", "AUO"};
-	int panel_id[2] = {1, 2};
-	static int lcd_id = -1;
-
-	if (!strncmp(src, "GET", 3)) {
-		printk(KERN_INFO, "%s : Lcd name is %s\n",
-				__func__, panel[lcd_id - 1]);
-		return lcd_id;
-	} else {
-		for (i = 0; i < sizeof(panel) / sizeof(panel[0]); i++) {
-			if (!strncmp(src, panel[i], sizeof(panel[i])))
-				lcd_id = panel_id[i];
-		}
-
-		if (lcd_id == -1) {
-			printk(KERN_INFO, "%s : Fail to get lcd panel name"
-				" from bootloader\n", __func__);
-			lcd_id = panel_id[1];
-		} else {
-			printk(KERN_INFO, "%s : Success to get"
-				"lcd panel name(%s) from bootloader\n",
-				__func__, panel[lcd_id - 1]);
-		}
-	}
-
-	return 1;
-}
-__setup("panel_name=", update_panel_name);
-
-/*
-* The function of "msm_fb_detect_panel()" is working for search
-* one panel among panels using the string(variable of panel).
-*/
 static int msm_fb_detect_panel(const char *name)
 {
 	int ret = -EPERM;
-	char panel[2][21] = {"lcdc_trebon_smd_hvga", "lcdc_trebon_auo_hvga"};
-	int lcd_id = -1;
-	lcd_id = update_panel_name("GET");
-	printk(KERN_INFO "LCD %s selected\n", panel[lcd_id - 1]);
 
 #if defined(CONFIG_FB_MSM_LCDC_S6D16A0X_HVGA)
-		if (!strncmp(name, "lcdc_s6d16a0x_hvga"), 19)
+		if (!strcmp(name, "lcdc_s6d16a0x_hvga"))
 			ret = 0;
 		else
 			ret = -ENODEV;
 #elif defined(CONFIG_FB_MSM_LCDC_TREBON_HVGA)
-		if (!strncmp(name, panel[lcd_id - 1],
-					sizeof(panel[lcd_id - 1])))
+		if (!strcmp(name, "lcdc_trebon_hvga"))
 			ret = 0;
 		else
 			ret = -ENODEV;
 #else
+#if 0 // toshiba panel
+	if (machine_is_msm7x27a_surf()) {
+		if (!strncmp(name, "lcdc_toshiba_fwvga_pt", 21))
+			ret = 0;
+	} else {
+		ret = -ENODEV;
+	}
+
+#endif
 #endif
 	return ret;
 }
