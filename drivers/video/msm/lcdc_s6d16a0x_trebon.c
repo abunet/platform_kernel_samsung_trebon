@@ -18,7 +18,7 @@
 
 #include <linux/delay.h>
 #include <linux/module.h>
-#include <mach/gpio.h>
+#include <linux/gpio.h>
 #include <mach/pmic.h>
 #include <mach/vreg.h>
 #include "msm_fb.h"
