@@ -351,8 +351,11 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
+ifdef CONFIG_LINARO
 OFLAGS	= -mcpu=cortex-a5 -march=armv7-a -mfpu=neon-vfpv4 -fgraphite-identity -floop-block -floop-strip-mine -ftree-loop-distribution
-
+else
+MODFLAGS	=
+endif
 CFLAGS_MODULE   = $(OFLAGS)
 AFLAGS_MODULE   = $(OFLAGS)
 LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
