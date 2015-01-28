@@ -914,8 +914,6 @@ config MACH_MSM_DUMMY
 
 endmenu
 
-source "arch/arm/mach-msm/lge/Kconfig"
-
 config MACH_TREBON_HWREV
         hex "MSM7x27A TREBON HWREV"
 		depends on MACH_TREBON
