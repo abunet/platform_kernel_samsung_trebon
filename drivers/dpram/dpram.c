@@ -85,7 +85,7 @@ struct delayed_work wq_param_init;
 
 samsung_vendor1_id *smem_vendor1;
 int silent_value;
-#if defined(CONFIG_MACH_TREBON) || defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_TREBON) 
 int default_dump_enable_flag;
 #else
 int default_dump_enable_flag = 1;

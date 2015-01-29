@@ -17,7 +17,7 @@
 
 //hsil
 /* #define DPRAM_16MB */
-#ifdef CONFIG_MACH_GEIM
+#ifdef CONFIG_MACH_TREBON
 #define DPRAM_64MB
 #else
 #define DPRAM_32MB
