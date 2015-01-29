@@ -17,27 +17,17 @@ ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
   obj-$(CONFIG_MSM_CPP) += cpp/
   obj-$(CONFIG_MSM_CAMERA) += msm_gesture.o
 else
-ifeq ($(CONFIG_MSM_CAMERA_LEGACY),y)
-  obj-$(CONFIG_MSM_CAMERA) += msm_camera_legacy.o
-else
   obj-$(CONFIG_MSM_CAMERA) += msm_camera.o
 endif
-endif
 obj-$(CONFIG_MSM_CAMERA) += msm_axi_qos.o gemini/
-ifeq ($(CONFIG_MSM_CAMERA_LEGACY),y)
-  obj-$(CONFIG_MSM_CAMERA_FLASH) += flash_legacy.o
-else
-  obj-$(CONFIG_MSM_CAMERA_FLASH) += flash.o
-endif
+obj-$(CONFIG_MSM_CAMERA_FLASH) += msm_flash.o
+obj-$(CONFIG_MSM_CAMERA_FLASH_SC628A) += sc628a.o
 obj-$(CONFIG_ARCH_MSM_ARM11) += msm_vfe7x.o
 ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
   obj-$(CONFIG_ARCH_MSM7X27A) += msm_vfe7x27a_v4l2.o
 else
-ifeq ($(CONFIG_MSM_CAMERA_LEGACY),y)
-  obj-$(CONFIG_ARCH_MSM7X27A) += msm_vfe7x27a_legacy.o
-else
+ifeq ($(CONFIG_MSM_CAMERA),y)
   obj-$(CONFIG_ARCH_MSM7X27A) += msm_vfe7x27a.o
-endif
 endif
 obj-$(CONFIG_ARCH_QSD8X50) += msm_vfe8x.o msm_vfe8x_proc.o
 ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
@@ -76,3 +66,4 @@ obj-$(CONFIG_MT9V113) += mt9v113.o
 
 obj-$(CONFIG_MT9D113) += mt9d113.o mt9d113_reg.o
 obj-$(CONFIG_MSM_V4L2_VIDEO_OVERLAY_DEVICE) += msm_v4l2_video.o
+endif
