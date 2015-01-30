@@ -480,11 +480,6 @@ config MSM_ADM3
 
 menu "MSM Board Selection"
 
-config MACH_TREBON
-        bool "MSM7627A trebon platform"
-		depends on ARCH_MSM7X27A
-        default n
-
 config MACH_HALIBUT
 	depends on ARCH_MSM7X01A
 	depends on MSM_STACKED_MEMORY
@@ -918,6 +913,8 @@ config MACH_TREBON_HWREV
         hex "MSM7x27A TREBON HWREV"
 		depends on MACH_TREBON
 		default "0x2"
+		help
+          Qualcomm TREBON H/W revision.
 
 config BQ27425_FUEL_GAUGE
 	bool "CONFIG_BQ27425_FUEL_GAUGE"
@@ -1629,7 +1626,7 @@ config MSM_CPU_FREQ_SET_MIN_MAX
 config MSM_CPU_FREQ_MAX
 	int "Max CPU Frequency"
 	depends on MSM_CPU_FREQ_SET_MIN_MAX
-	default 384000
+	default 100800
 
 config MSM_CPU_FREQ_MIN
 	int "Min CPU Frequency"
@@ -2395,6 +2392,14 @@ config MSM_L2_SPM
 	  control of L2 cache low power mode with a Subsystem Power manager.
 	  Enabling this driver allows configuring L2 SPM for low power modes
 	  on supported chipsets.
+
+config MACH_TREBON
+        depends on ARCH_MSM7X27A
+        depends on !MSM_STACKED_MEMORY
+        default n
+        bool "MSM7x27A TREBON"
+        help
+          Support for the Qualcomm TREBON 
 
 config MSM_MULTIMEDIA_USE_ION
 	bool "Multimedia suport using Ion"
