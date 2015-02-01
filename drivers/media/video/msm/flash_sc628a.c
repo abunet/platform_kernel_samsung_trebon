@@ -22,13 +22,7 @@
 #include <mach/gpio.h>
 
 #if defined CONFIG_MSM_CAMERA_FLASH_SC628A
-static struct sc628a_work_t *sc628a_flash;
 static struct i2c_client *sc628a_client;
-static DECLARE_WAIT_QUEUE_HEAD(sc628a_wait_queue);
-
-struct sc628a_work_t {
-	struct work_struct work;
-};
 
 static const struct i2c_device_id sc628a_i2c_id[] = {
 	{"sc628a", 0},
@@ -47,7 +41,7 @@ static int32_t sc628a_i2c_txdata(unsigned short saddr,
 		},
 	};
 	if (i2c_transfer(sc628a_client->adapter, msg, 1) < 0) {
-		pr_err("sc628a_i2c_txdata faild 0x%x\n", saddr);
+		CDBG("sc628a_i2c_txdata faild 0x%x\n", saddr);
 		return -EIO;
 	}
 
@@ -58,24 +52,21 @@ static int32_t sc628a_i2c_write_b_flash(uint8_t waddr, uint8_t bdata)
 {
 	int32_t rc = -EFAULT;
 	unsigned char buf[2];
+	if (!sc628a_client)
+		return  -ENOTSUPP;
 
 	memset(buf, 0, sizeof(buf));
 	buf[0] = waddr;
 	buf[1] = bdata;
 
-	rc = sc628a_i2c_txdata(sc628a_client->addr, buf, 2);
+	rc = sc628a_i2c_txdata(sc628a_client->addr>>1, buf, 2);
 	if (rc < 0) {
-		pr_err("i2c_write_b failed, addr = 0x%x, val = 0x%x!\n",
+		CDBG("i2c_write_b failed, addr = 0x%x, val = 0x%x!\n",
 				waddr, bdata);
 	}
-	return rc;
-}
+	usleep_range(4000, 5000);
 
-static int sc628a_init_client(struct i2c_client *client)
-{
-	/* Initialize the MSM_CAMI2C Chip */
-	init_waitqueue_head(&sc628a_wait_queue);
-	return 0;
+	return rc;
 }
 
 static int sc628a_i2c_probe(struct i2c_client *client,
@@ -89,18 +80,7 @@ static int sc628a_i2c_probe(struct i2c_client *client,
 		goto probe_failure;
 	}
 
-	sc628a_flash = kzalloc(sizeof(struct sc628a_work_t), GFP_KERNEL);
-	if (!sc628a_flash) {
-		pr_err("kzalloc failed.\n");
-		rc = -ENOMEM;
-		goto probe_failure;
-	}
-
-	i2c_set_clientdata(client, sc628a_flash);
-	sc628a_init_client(client);
 	sc628a_client = client;
-
-	msleep(50);
 
 	CDBG("sc628a_probe successed! rc = %d\n", rc);
 	return 0;

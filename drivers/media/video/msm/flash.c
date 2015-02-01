@@ -21,10 +21,10 @@
 #include <mach/pmic.h>
 #include <mach/camera.h>
 #include <mach/gpio.h>
-#include "msm_flash.h"
 
+struct i2c_client *sx150x_client;
 struct timer_list timer_flash;
-
+static struct msm_camera_sensor_info *sensor_data;
 enum msm_cam_flash_stat{
 	MSM_CAM_FLASH_OFF,
 	MSM_CAM_FLASH_ON,
