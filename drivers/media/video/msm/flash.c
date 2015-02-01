@@ -21,6 +21,7 @@
 #include <mach/pmic.h>
 #include <mach/camera.h>
 #include <mach/gpio.h>
+#include "msm_flash.h"
 
 struct timer_list timer_flash;
 

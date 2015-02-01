@@ -20,13 +20,12 @@ else
   obj-$(CONFIG_MSM_CAMERA) += msm_camera.o
 endif
 obj-$(CONFIG_MSM_CAMERA) += msm_axi_qos.o gemini/
-obj-$(CONFIG_MSM_CAMERA_FLASH) += msm_flash.o
-obj-$(CONFIG_MSM_CAMERA_FLASH_SC628A) += sc628a.o
+obj-$(CONFIG_MSM_CAMERA_FLASH) += flash.o
+obj-$(CONFIG_MSM_CAMERA_FLASH_SC628A) += flash_sc628a.o
 obj-$(CONFIG_ARCH_MSM_ARM11) += msm_vfe7x.o
 ifeq ($(CONFIG_MSM_CAMERA_V4L2),y)
   obj-$(CONFIG_ARCH_MSM7X27A) += msm_vfe7x27a_v4l2.o
 else
-ifeq ($(CONFIG_MSM_CAMERA),y)
   obj-$(CONFIG_ARCH_MSM7X27A) += msm_vfe7x27a.o
 endif
 obj-$(CONFIG_ARCH_QSD8X50) += msm_vfe8x.o msm_vfe8x_proc.o
