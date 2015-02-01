@@ -458,7 +458,7 @@ static int msm_camera_v4l2_streamoff(struct file *f, void *pctx,
 		pr_err("%s: hw failed to stop streaming\n", __func__);
 
 	/* stop buffer streaming */
-	rc = vb2_streamoff(&pcam_inst->vid_bufq, buf_type);
+	vb2_streamoff(&pcam_inst->vid_bufq, buf_type);
 	D("%s, videobuf_streamoff returns %d\n", __func__, rc);
 
 	mutex_unlock(&pcam_inst->inst_lock);
@@ -704,6 +704,8 @@ static int msm_vidbuf_get_path(u32 extendedmode)
 		return OUTPUT_TYPE_R;
 	case MSM_V4L2_EXT_CAPTURE_MODE_RDI1:
 		return OUTPUT_TYPE_R1;
+	case MSM_V4L2_EXT_CAPTURE_MODE_RDI2:
+		return OUTPUT_TYPE_R2;
 	case MSM_V4L2_EXT_CAPTURE_MODE_AEC:
 		return OUTPUT_TYPE_SAEC;
 	case MSM_V4L2_EXT_CAPTURE_MODE_AF:
@@ -823,7 +825,7 @@ static long msm_camera_v4l2_private_ioctl(struct file *file, void *fh,
 			mutex_unlock(&pcam->event_lock);
 			break;
 		}
-		if (ioctl_ptr->len > 0) {
+		if (ioctl_ptr->len > 0 && ioctl_ptr->len <= MAX_SERVER_PAYLOAD_LENGTH) {
 			if (copy_to_user(ioctl_ptr->ioctl_ptr, payload,
 				 ioctl_ptr->len)) {
 				pr_err("%s Copy to user failed for cmd %d",
@@ -955,8 +957,10 @@ static int msm_open(struct file *f)
 			goto msm_cam_server_begin_session_failed;
 		}
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-		pmctl->client = msm_ion_client_create(-1, "camera");
-		kref_init(&pmctl->refcount);
+		if (!pmctl->client) {
+			pmctl->client = msm_ion_client_create(-1, "camera");
+			kref_init(&pmctl->refcount);
+		}
 		ion_client_created = 1;
 #endif
 
@@ -982,6 +986,7 @@ static int msm_open(struct file *f)
 		msm_queue_init(&pcam->eventData_q, "eventData");
 	}
 	pcam_inst->vbqueue_initialized = 0;
+	pcam_inst->sequence = 0;
 	rc = 0;
 
 	f->private_data = &pcam_inst->eventHandle;
@@ -1005,8 +1010,10 @@ msm_send_open_server_failed:
 	msm_drain_eventq(&pcam->eventData_q);
 	msm_destroy_v4l2_event_queue(&pcam_inst->eventHandle);
 
-	if (pmctl->mctl_release)
+	if (pmctl->mctl_release) {
 		pmctl->mctl_release(pmctl);
+		pmctl->mctl_release = NULL;
+	}
 mctl_open_failed:
 	if (pcam->use_count == 1) {
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
@@ -1102,6 +1109,7 @@ void msm_release_ion_client(struct kref *ref)
 		struct msm_cam_media_controller, refcount);
 	pr_err("%s Calling ion_client_destroy\n", __func__);
 	ion_client_destroy(mctl->client);
+	mctl->client = NULL;
 }
 
 static int msm_close(struct file *f)
@@ -1167,8 +1175,10 @@ static int msm_close(struct file *f)
 				pr_err("msm_send_close_server failed %d\n", rc);
 		}
 
-		if (pmctl->mctl_release)
+		if (pmctl->mctl_release) {
 			pmctl->mctl_release(pmctl);
+			pmctl->mctl_release = NULL;
+		}
 
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 		kref_put(&pmctl->refcount, msm_release_ion_client);
@@ -1233,6 +1243,10 @@ long msm_v4l2_evt_notify(struct msm_cam_media_controller *mctl,
 	v4l2_ev = evt_payload.evt;
 	v4l2_ev.id = 0;
 	pcam = mctl->pcam_ptr;
+	if(!pcam) {
+		pr_err("%s: pcam is NULL\n", __func__);
+		return -EINVAL;
+	}
 	ktime_get_ts(&v4l2_ev.timestamp);
 	if (evt_payload.payload_length > 0 && evt_payload.payload != NULL) {
 		mutex_lock(&pcam->event_lock);
@@ -1396,7 +1410,6 @@ static struct v4l2_subdev *msm_actuator_probe(
 		}
 	}
 
-	i2c_put_adapter(adapter);
 	return act_sdev;
 
 client_fail:
@@ -1432,50 +1445,10 @@ static struct v4l2_subdev *msm_eeprom_probe(
 	if (eeprom_sdev == NULL)
 		goto client_fail;
 
-	i2c_put_adapter(adapter);
 	return eeprom_sdev;
 client_fail:
 	pr_err("%s client_fail\n", __func__);
 	i2c_unregister_device(eeprom_client);
-device_fail:
-	pr_err("%s device_fail\n", __func__);
-	i2c_put_adapter(adapter);
-	adapter = NULL;
-probe_fail:
-	pr_err("%s probe_fail\n", __func__);
-	return NULL;
-}
-
-static struct v4l2_subdev *msm_flash_probe(
-	struct msm_camera_sensor_flash_data *flash_info)
-{
-	struct v4l2_subdev *flash_sdev = NULL;
-	struct i2c_adapter *adapter = NULL;
-	void *flash_client = NULL;
-
-	D("%s called\n", __func__);
-
-	if (!flash_info || !flash_info->board_info)
-		goto probe_fail;
-
-	adapter = i2c_get_adapter(flash_info->bus_id);
-	if (!adapter)
-		goto probe_fail;
-
-	flash_client = i2c_new_device(adapter, flash_info->board_info);
-	if (!flash_client)
-		goto device_fail;
-
-	flash_sdev = (struct v4l2_subdev *)i2c_get_clientdata(flash_client);
-	if (flash_sdev == NULL)
-		goto client_fail;
-
-	i2c_put_adapter(adapter);
-	return flash_sdev;
-
-client_fail:
-	pr_err("%s client_fail\n", __func__);
-	i2c_unregister_device(flash_client);
 device_fail:
 	pr_err("%s device_fail\n", __func__);
 	i2c_put_adapter(adapter);
@@ -1512,7 +1485,6 @@ int msm_sensor_register(struct v4l2_subdev *sensor_sd)
 
 	pcam->act_sdev = msm_actuator_probe(sdata->actuator_info);
 	pcam->eeprom_sdev = msm_eeprom_probe(sdata->eeprom_info);
-	pcam->flash_sdev = msm_flash_probe(sdata->flash_data);
 
 	D("%s: pcam =0x%p\n", __func__, pcam);
 
@@ -1566,15 +1538,6 @@ int msm_sensor_register(struct v4l2_subdev *sensor_sd)
 			pcam->eeprom_sdev);
 		if (rc < 0) {
 			D("%s eeprom sub device register failed\n", __func__);
-			goto failure;
-		}
-	}
-
-	if (pcam->flash_sdev) {
-		rc = v4l2_device_register_subdev(&pcam->v4l2_dev,
-			pcam->flash_sdev);
-		if (rc < 0) {
-			D("%s flash sub device register failed\n", __func__);
 			goto failure;
 		}
 	}
