@@ -193,7 +193,7 @@ static int vibrator_timer_do_work(struct work_struct *ignored)
 	return 0;
 }
 
-static DECLARE_WORK(vibrator_timer_work, vibrator_timer_do_work);
+static DECLARE_WORK(vibrator_timer_work, &vibrator_timer_do_work);
 
 static enum hrtimer_restart vibrator_timer_func(struct hrtimer *timer)
 {

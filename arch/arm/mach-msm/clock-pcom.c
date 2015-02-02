@@ -17,7 +17,6 @@
 #include <linux/err.h>
 
 #include <mach/clk.h>
-#include <mach/clk-provider.h>
 #include <mach/socinfo.h>
 #include <mach/proc_comm.h>
 

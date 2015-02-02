@@ -2079,7 +2079,6 @@ FUNCTION:  tavarua_fops_open
 static int tavarua_fops_open(struct file *file)
 {
 	struct tavarua_device *radio = video_get_drvdata(video_devdata(file));
-	struct marimba config = { .mod_id =  SLAVE_ID_BAHAMA};
 	int retval = -ENODEV;
 	unsigned char value;
 	/* FM core bring up */
@@ -2130,13 +2129,14 @@ static int tavarua_fops_open(struct file *file)
 	if (bahama_present == -ENODEV)
 		return -ENODEV;
 
+	marimba_set_fm_status(radio->marimba, true);
 	if (bahama_present)
 		radio->marimba->mod_id = SLAVE_ID_BAHAMA;
 	else
 		radio->marimba->mod_id = MARIMBA_SLAVE_ID_MARIMBA;
 
 	value = FM_ENABLE;
-	retval = marimba_write_bit_mask(&config,
+	retval = marimba_write_bit_mask(radio->marimba,
 			MARIMBA_XO_BUFF_CNTRL, &value, 1, value);
 	if (retval < 0) {
 		printk(KERN_ERR "%s:XO_BUFF_CNTRL write failed\n",
@@ -2150,7 +2150,7 @@ static int tavarua_fops_open(struct file *file)
 
 		radio->marimba->mod_id = SLAVE_ID_BAHAMA;
 		/* Read the Bahama version*/
-		retval = marimba_read_bit_mask(&config,
+		retval = marimba_read_bit_mask(radio->marimba,
 				0x00,  &bahama_version, 1, 0x1F);
 		if (retval < 0) {
 			printk(KERN_ERR "%s: version read failed",
@@ -2166,7 +2166,7 @@ static int tavarua_fops_open(struct file *file)
 			 */
 			value = 0x06;
 			/* value itself used as mask in these writes*/
-			retval = marimba_write_bit_mask(&config,
+			retval = marimba_write_bit_mask(radio->marimba,
 			BAHAMA_LDO_DREG_CTL0, &value, 1, value);
 			if (retval < 0) {
 				printk(KERN_ERR "%s:0xF0 write failed\n",
@@ -2174,7 +2174,7 @@ static int tavarua_fops_open(struct file *file)
 				goto open_err_all;
 			}
 			value = 0x86;
-			retval = marimba_write_bit_mask(&config,
+			retval = marimba_write_bit_mask(radio->marimba,
 				BAHAMA_LDO_AREG_CTL0, &value, 1, value);
 			if (retval < 0) {
 				printk(KERN_ERR "%s:0xF4 write failed\n",
@@ -2264,14 +2264,13 @@ static int tavarua_fops_open(struct file *file)
 
 	radio->handle_irq = 0;
 	radio->marimba->mod_id = SLAVE_ID_BAHAMA;
-	marimba_set_fm_status(radio->marimba, true);
 	return 0;
 
 
 open_err_all:
     /*Disable FM in case of error*/
 	value = 0x00;
-	marimba_write_bit_mask(&config, MARIMBA_XO_BUFF_CNTRL,
+	marimba_write_bit_mask(radio->marimba, MARIMBA_XO_BUFF_CNTRL,
 							&value, 1, value);
 	tavarua_disable_irq(radio);
 open_err_req_irq:
@@ -2280,6 +2279,7 @@ open_err_req_irq:
 config_i2s_err:
 	radio->pdata->fm_shutdown(radio->pdata);
 open_err_setup:
+	marimba_set_fm_status(radio->marimba, false);
 	radio->handle_irq = 1;
 	atomic_inc(&radio->users);
 	return retval;
@@ -2300,7 +2300,6 @@ static int tavarua_fops_release(struct file *file)
 {
 	int retval;
 	struct tavarua_device *radio = video_get_drvdata(video_devdata(file));
-	struct marimba config = { .mod_id =  SLAVE_ID_BAHAMA};
 	unsigned char value;
 	int i = 0;
 	/*FM Core shutdown sequence for Bahama*/
@@ -2403,7 +2402,7 @@ static int tavarua_fops_release(struct file *file)
 		&& (bahama_version == 0x09 || bahama_version == 0x0a))   {
 		radio->marimba->mod_id = SLAVE_ID_BAHAMA;
 		/* actual value itself used as mask*/
-		retval = marimba_write_bit_mask(&config,
+		retval = marimba_write_bit_mask(radio->marimba,
 			BAHAMA_LDO_DREG_CTL0, &internal_vreg_ctl[bt_status][0],
 			 1, internal_vreg_ctl[index][0]);
 		if (retval < 0) {
@@ -2411,7 +2410,7 @@ static int tavarua_fops_release(struct file *file)
 			goto exit;
 		}
 		/* actual value itself used as mask*/
-		retval = marimba_write_bit_mask(&config,
+		retval = marimba_write_bit_mask(radio->marimba,
 			BAHAMA_LDO_AREG_CTL0, &internal_vreg_ctl[bt_status][1],
 			1, internal_vreg_ctl[index][1]);
 		if (retval < 0) {
@@ -2424,7 +2423,7 @@ static int tavarua_fops_release(struct file *file)
 	}
 
 	value = 0x00;
-	retval = marimba_write_bit_mask(&config, MARIMBA_XO_BUFF_CNTRL,
+	retval = marimba_write_bit_mask(radio->marimba, MARIMBA_XO_BUFF_CNTRL,
 							&value, 1, FM_ENABLE);
 	if (retval < 0) {
 		printk(KERN_ERR "%s:XO_BUFF_CNTRL write failed\n", __func__);
@@ -3293,7 +3292,7 @@ static int tavarua_vidioc_s_ext_ctrls(struct file *file, void *priv,
 	int retval = 0;
 	int bytes_to_copy;
 	int bytes_copied = 0;
-	int bytes_left = 0;
+	__u32 bytes_left = 0;
 	int chunk_index = 0;
 	char tx_data[XFR_REG_NUM];
 	struct tavarua_device *radio = video_get_drvdata(video_devdata(file));
@@ -3320,15 +3319,15 @@ static int tavarua_vidioc_s_ext_ctrls(struct file *file, void *priv,
 
 		chunk_index = 0;
 		bytes_copied = 0;
-		bytes_left = min((int)(ctrl->controls[0]).size,
-			MAX_PS_LENGTH);
+		bytes_left = min((ctrl->controls[0]).size,
+			(__u32)MAX_PS_LENGTH);
 		data = (ctrl->controls[0]).string;
 
 		/* send payload to FM hardware */
 		while (bytes_left) {
 			chunk_index++;
 			FMDBG("chunk is %d", chunk_index);
-			bytes_to_copy = min(bytes_left, XFR_REG_NUM);
+			bytes_to_copy = min(bytes_left, (__u32)XFR_REG_NUM);
 			/*Clear the tx_data */
 			memset(tx_data, 0, XFR_REG_NUM);
 			if (copy_from_user(tx_data,
@@ -3370,12 +3369,12 @@ static int tavarua_vidioc_s_ext_ctrls(struct file *file, void *priv,
 		FMDBG("Passed RT String : %s\n",
 			(ctrl->controls[0]).string);
 		bytes_left =
-		    min((int)(ctrl->controls[0]).size, MAX_RT_LENGTH);
+		    min((ctrl->controls[0]).size, (__u32)MAX_RT_LENGTH);
 		data = (ctrl->controls[0]).string;
 		/* send payload to FM hardware */
 		while (bytes_left) {
 			chunk_index++;
-			bytes_to_copy = min(bytes_left, XFR_REG_NUM);
+			bytes_to_copy = min(bytes_left, (__u32)XFR_REG_NUM);
 			memset(tx_data, 0, XFR_REG_NUM);
 			if (copy_from_user(tx_data,
 				    data + bytes_copied, bytes_to_copy))
@@ -4638,7 +4637,7 @@ static int tavarua_suspend(struct platform_device *pdev, pm_message_t state)
 	struct tavarua_device *radio = platform_get_drvdata(pdev);
 	int retval;
 	int users = 0;
-	printk(KERN_INFO DRIVER_NAME "%s: radio suspend\n\n", __func__);
+	FMDBG("%s: radio suspend\n\n", __func__);
 
 	if (unlikely(radio == NULL)) {
 		FMDERR("%s:radio is null", __func__);
@@ -4675,7 +4674,7 @@ static int tavarua_resume(struct platform_device *pdev)
 	struct tavarua_device *radio = platform_get_drvdata(pdev);
 	int retval;
 	int users = 0;
-	printk(KERN_INFO DRIVER_NAME "%s: radio resume\n\n", __func__);
+	FMDBG("%s: radio resume\n\n", __func__);
 
 	if (unlikely(radio == NULL)) {
 		FMDERR("%s:radio is null", __func__);
@@ -4816,8 +4815,8 @@ static int  __init tavarua_probe(struct platform_device *pdev)
 
 	struct marimba_fm_platform_data *tavarua_pdata;
 	struct tavarua_device *radio;
-	int retval;
-	int i;
+	int retval = 0;
+	int i = 0, j = 0;
 	FMDBG("%s: probe called\n", __func__);
 
 	if (unlikely(pdev == NULL)) {
@@ -4836,6 +4835,7 @@ static int  __init tavarua_probe(struct platform_device *pdev)
 	tavarua_pdata = pdev->dev.platform_data;
 	radio->pdata = tavarua_pdata;
 	radio->dev = &pdev->dev;
+	radio->wqueue = NULL;
 	platform_set_drvdata(pdev, radio);
 
 	/* video device allocation */
@@ -4865,15 +4865,16 @@ static int  __init tavarua_probe(struct platform_device *pdev)
 		if (kfifo_alloc_rc!=0) {
 			printk(KERN_ERR "%s: failed allocating buffers %d\n",
 				__func__, kfifo_alloc_rc);
-			goto err_bufs;
+		        retval = -ENOMEM;
+		        goto err_all;
 		}
 	}
 	/* initializing the device count  */
 	atomic_set(&radio->users, 1);
 	radio->xfr_in_progress = 0;
 	radio->xfr_bytes_left = 0;
-	for (i = 0; i < TAVARUA_XFR_MAX; i++)
-		radio->pending_xfrs[i] = 0;
+	for (j = 0; j < TAVARUA_XFR_MAX; j++)
+		radio->pending_xfrs[j] = 0;
 
 	/* init transmit data */
 	radio->tx_mode = TAVARUA_TX_RT;
@@ -4904,11 +4905,14 @@ static int  __init tavarua_probe(struct platform_device *pdev)
     /*Start the worker thread for event handling and register read_int_stat
 	as worker function*/
 	radio->wqueue  = create_singlethread_workqueue("kfmradio");
-	if (!radio->wqueue)
-		return -ENOMEM;
+	if (!radio->wqueue) {
+	        retval = -ENOMEM;
+		goto err_all;
+        }
 
 	/* register video device */
-	if (video_register_device(radio->videodev, VFL_TYPE_RADIO, radio_nr)) {
+	retval = video_register_device(radio->videodev, VFL_TYPE_RADIO, radio_nr);
+	if (retval != 0) {
 		printk(KERN_WARNING DRIVER_NAME
 				": Could not register video device\n");
 		goto err_all;
@@ -4918,9 +4922,11 @@ static int  __init tavarua_probe(struct platform_device *pdev)
 
 err_all:
 	video_device_release(radio->videodev);
-err_bufs:
-	for (; i > -1; i--)
+	if (radio->wqueue)
+		destroy_workqueue(radio->wqueue);
+	for (i--; i >= 0; i--) {
 		kfifo_free(&radio->data_buf[i]);
+        }
 err_radio:
 	kfree(radio);
 err_initial:
@@ -5026,4 +5032,3 @@ MODULE_VERSION(DRIVER_VERSION);
 
 module_init(radio_module_init);
 module_exit(radio_module_exit);
-

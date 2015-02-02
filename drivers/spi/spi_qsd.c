@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -215,12 +215,13 @@ static void __init msm_spi_calculate_fifo_size(struct msm_spi *dd)
 	if (dd->input_block_size == 4 || dd->output_block_size == 4)
 		dd->use_dma = 0;
 
-	if (dd->use_dma) {
-		dd->input_burst_size = max(dd->input_block_size,
-					DM_BURST_SIZE);
-		dd->output_burst_size = max(dd->output_block_size,
-					DM_BURST_SIZE);
-	}
+	/* DM mode is currently unsupported for different block sizes */
+	if (dd->input_block_size != dd->output_block_size)
+		dd->use_dma = 0;
+
+	if (dd->use_dma)
+		dd->burst_size = max(dd->input_block_size, DM_BURST_SIZE);
+
 	return;
 
 fifo_size_err:
@@ -283,18 +284,6 @@ static inline bool msm_spi_is_valid_state(struct msm_spi *dd)
 	return spi_op & SPI_OP_STATE_VALID;
 }
 
-static inline void msm_spi_udelay(unsigned long delay_usecs)
-{
-	/*
-	 * For smaller values of delay, context switch time
-	 * would negate the usage of usleep
-	 */
-	if (delay_usecs > 20)
-		usleep_range(delay_usecs, delay_usecs);
-	else if (delay_usecs)
-		udelay(delay_usecs);
-}
-
 static inline int msm_spi_wait_valid(struct msm_spi *dd)
 {
 	unsigned long delay = 0;
@@ -328,7 +317,14 @@ static inline int msm_spi_wait_valid(struct msm_spi *dd)
 			} else
 				return 0;
 		}
-		msm_spi_udelay(delay);
+		/*
+		 * For smaller values of delay, context switch time
+		 * would negate the usage of usleep
+		 */
+		if (delay > 20)
+			usleep(delay);
+		else if (delay)
+			udelay(delay);
 	}
 	return 0;
 }
@@ -393,8 +389,7 @@ static void msm_spi_set_config(struct msm_spi *dd, int bpw)
 static void msm_spi_setup_dm_transfer(struct msm_spi *dd)
 {
 	dmov_box *box;
-	int bytes_to_send, bytes_sent;
-	int tx_num_rows, rx_num_rows;
+	int bytes_to_send, num_rows, bytes_sent;
 	u32 num_transfers;
 
 	atomic_set(&dd->rx_irq_called, 0);
@@ -409,97 +404,77 @@ static void msm_spi_setup_dm_transfer(struct msm_spi *dd)
 		if (bytes_sent < 0)
 			bytes_sent = 0;
 	}
+
 	/* We'll send in chunks of SPI_MAX_LEN if larger than
-	 * 4K bytes for targets that have only 12 bits in
-	 * QUP_MAX_OUTPUT_CNT register. If the target supports
-	 * more than 12bits then we send the data in chunks of
-	 * the infinite_mode value that is defined in the
-	 * corresponding board file.
+	 * 4K bytes for targets that doesn't support infinite
+	 * mode. Make sure this doesn't happen on targets that
+	 * support infinite mode.
 	 */
 	if (!dd->pdata->infinite_mode)
-		dd->max_trfr_len = SPI_MAX_LEN;
+		bytes_to_send = dd->tx_bytes_remaining / SPI_MAX_LEN ?
+				SPI_MAX_LEN : dd->tx_bytes_remaining;
 	else
-		dd->max_trfr_len = (dd->pdata->infinite_mode) *
-			   (dd->bytes_per_word);
-
-	bytes_to_send = min_t(u32, dd->tx_bytes_remaining,
-			      dd->max_trfr_len);
+		bytes_to_send = dd->tx_bytes_remaining;
 
 	num_transfers = DIV_ROUND_UP(bytes_to_send, dd->bytes_per_word);
-	dd->tx_unaligned_len = bytes_to_send % dd->output_burst_size;
-	dd->rx_unaligned_len = bytes_to_send % dd->input_burst_size;
-	tx_num_rows = bytes_to_send / dd->output_burst_size;
-	rx_num_rows = bytes_to_send / dd->input_burst_size;
+	dd->unaligned_len = bytes_to_send % dd->burst_size;
+	num_rows = bytes_to_send / dd->burst_size;
 
 	dd->mode = SPI_DMOV_MODE;
 
-	if (tx_num_rows) {
+	if (num_rows) {
 		/* src in 16 MSB, dst in 16 LSB */
 		box = &dd->tx_dmov_cmd->box;
 		box->src_row_addr = dd->cur_transfer->tx_dma + bytes_sent;
-		box->src_dst_len
-			= (dd->output_burst_size << 16) | dd->output_burst_size;
-		box->num_rows = (tx_num_rows << 16) | tx_num_rows;
-		box->row_offset = (dd->output_burst_size << 16) | 0;
+		box->src_dst_len = (dd->burst_size << 16) | dd->burst_size;
+		box->num_rows = (num_rows << 16) | num_rows;
+		box->row_offset = (dd->burst_size << 16) | 0;
 
-		dd->tx_dmov_cmd->cmd_ptr = CMD_PTR_LP |
-				   DMOV_CMD_ADDR(dd->tx_dmov_cmd_dma +
-				   offsetof(struct spi_dmov_cmd, box));
-	} else {
-		dd->tx_dmov_cmd->cmd_ptr = CMD_PTR_LP |
-				   DMOV_CMD_ADDR(dd->tx_dmov_cmd_dma +
-				   offsetof(struct spi_dmov_cmd, single_pad));
-	}
-
-	if (rx_num_rows) {
-		/* src in 16 MSB, dst in 16 LSB */
 		box = &dd->rx_dmov_cmd->box;
 		box->dst_row_addr = dd->cur_transfer->rx_dma + bytes_sent;
-		box->src_dst_len
-			= (dd->input_burst_size << 16) | dd->input_burst_size;
-		box->num_rows = (rx_num_rows << 16) | rx_num_rows;
-		box->row_offset = (0 << 16) | dd->input_burst_size;
+		box->src_dst_len = (dd->burst_size << 16) | dd->burst_size;
+		box->num_rows = (num_rows << 16) | num_rows;
+		box->row_offset = (0 << 16) | dd->burst_size;
 
+		dd->tx_dmov_cmd->cmd_ptr = CMD_PTR_LP |
+				   DMOV_CMD_ADDR(dd->tx_dmov_cmd_dma +
+				   offsetof(struct spi_dmov_cmd, box));
 		dd->rx_dmov_cmd->cmd_ptr = CMD_PTR_LP |
 				   DMOV_CMD_ADDR(dd->rx_dmov_cmd_dma +
 				   offsetof(struct spi_dmov_cmd, box));
 	} else {
+		dd->tx_dmov_cmd->cmd_ptr = CMD_PTR_LP |
+				   DMOV_CMD_ADDR(dd->tx_dmov_cmd_dma +
+				   offsetof(struct spi_dmov_cmd, single_pad));
 		dd->rx_dmov_cmd->cmd_ptr = CMD_PTR_LP |
 				   DMOV_CMD_ADDR(dd->rx_dmov_cmd_dma +
 				   offsetof(struct spi_dmov_cmd, single_pad));
 	}
 
-	if (!dd->tx_unaligned_len) {
+	if (!dd->unaligned_len) {
 		dd->tx_dmov_cmd->box.cmd |= CMD_LC;
-	} else {
-		dmov_s *tx_cmd = &(dd->tx_dmov_cmd->single_pad);
-		u32 tx_offset = dd->cur_transfer->len - dd->tx_unaligned_len;
-
-		if ((dd->multi_xfr) && (dd->read_len <= 0))
-			tx_offset = dd->cur_msg_len - dd->tx_unaligned_len;
-
-		dd->tx_dmov_cmd->box.cmd &= ~CMD_LC;
-
-		memset(dd->tx_padding, 0, dd->output_burst_size);
-		if (dd->write_buf)
-			memcpy(dd->tx_padding, dd->write_buf + tx_offset,
-			       dd->tx_unaligned_len);
-
-		tx_cmd->src = dd->tx_padding_dma;
-		tx_cmd->len = dd->output_burst_size;
-	}
-
-	if (!dd->rx_unaligned_len) {
 		dd->rx_dmov_cmd->box.cmd |= CMD_LC;
 	} else {
+		dmov_s *tx_cmd = &(dd->tx_dmov_cmd->single_pad);
 		dmov_s *rx_cmd = &(dd->rx_dmov_cmd->single_pad);
+		u32 offset = dd->cur_transfer->len - dd->unaligned_len;
+
+		if ((dd->multi_xfr) && (dd->read_len <= 0))
+			offset = dd->cur_msg_len - dd->unaligned_len;
+
+		dd->tx_dmov_cmd->box.cmd &= ~CMD_LC;
 		dd->rx_dmov_cmd->box.cmd &= ~CMD_LC;
 
-		memset(dd->rx_padding, 0, dd->input_burst_size);
-		rx_cmd->dst = dd->rx_padding_dma;
-		rx_cmd->len = dd->input_burst_size;
-	}
+		memset(dd->tx_padding, 0, dd->burst_size);
+		memset(dd->rx_padding, 0, dd->burst_size);
+		if (dd->write_buf)
+			memcpy(dd->tx_padding, dd->write_buf + offset,
+			       dd->unaligned_len);
 
+		tx_cmd->src = dd->tx_padding_dma;
+		rx_cmd->dst = dd->rx_padding_dma;
+		tx_cmd->len = rx_cmd->len = dd->burst_size;
+	}
 	/* This also takes care of the padding dummy buf
 	   Since this is set to the correct length, the
 	   dummy bytes won't be actually sent */
@@ -545,11 +520,10 @@ static void msm_spi_enqueue_dm_commands(struct msm_spi *dd)
 		msm_dmov_enqueue_cmd(dd->rx_dma_chan, &dd->rx_hdr);
 }
 
-/* SPI core on targets that does not support infinite mode can send
-   maximum of 4K transfers or 64K transfers depending up on size of
-   MAX_OUTPUT_COUNT register, Therefore, we are sending in several
-   chunks. Upon completion we send the next chunk, or complete the
-   transfer if everything is finished. On targets that support
+/* SPI core on targets that does not support infinite mode can send maximum of
+   4K transfers, Therefore, we are sending several chunks of 3K or less
+   (depending on how much is left). Upon completion we send the next chunk,
+   or complete the transfer if everything is finished. On targets that support
    infinite mode, we send all the bytes in as single chunk.
 */
 static int msm_spi_dm_send_next(struct msm_spi *dd)
@@ -562,8 +536,9 @@ static int msm_spi_dm_send_next(struct msm_spi *dd)
 
 	/* On targets which does not support infinite mode,
 	   We need to send more chunks, if we sent max last time  */
-	if (dd->tx_bytes_remaining > dd->max_trfr_len) {
-		dd->tx_bytes_remaining -= dd->max_trfr_len;
+	if ((!dd->pdata->infinite_mode) &&
+	    (dd->tx_bytes_remaining > SPI_MAX_LEN)) {
+		dd->tx_bytes_remaining -= SPI_MAX_LEN;
 		if (msm_spi_set_state(dd, SPI_OP_STATE_RESET))
 			return 0;
 		dd->read_len = dd->write_len = 0;
@@ -657,7 +632,7 @@ static irqreturn_t msm_spi_input_irq(int irq, void *dev_id)
 		if ((!dd->read_buf || op & SPI_OP_MAX_INPUT_DONE_FLAG) &&
 		    (!dd->write_buf || op & SPI_OP_MAX_OUTPUT_DONE_FLAG)) {
 			msm_spi_ack_transfer(dd);
-			if (dd->rx_unaligned_len == 0) {
+			if (dd->unaligned_len == 0) {
 				if (atomic_inc_return(&dd->rx_irq_called) == 1)
 					return IRQ_HANDLED;
 			}
@@ -901,11 +876,11 @@ static void msm_spi_unmap_dma_buffers(struct msm_spi *dd)
 						 prev_xfr->len,
 						 DMA_TO_DEVICE);
 			}
-			if (dd->rx_unaligned_len && dd->read_buf) {
-				offset = dd->cur_msg_len - dd->rx_unaligned_len;
+			if (dd->unaligned_len && dd->read_buf) {
+				offset = dd->cur_msg_len - dd->unaligned_len;
 				dma_coherent_post_ops();
 				memcpy(dd->read_buf + offset, dd->rx_padding,
-				       dd->rx_unaligned_len);
+				       dd->unaligned_len);
 				memcpy(dd->cur_transfer->rx_buf,
 				       dd->read_buf + prev_xfr->len,
 				       dd->cur_transfer->len);
@@ -927,11 +902,11 @@ static void msm_spi_unmap_dma_buffers(struct msm_spi *dd)
 
 unmap_end:
 	/* If we padded the transfer, we copy it from the padding buf */
-	if (dd->rx_unaligned_len && dd->read_buf) {
-		offset = dd->cur_transfer->len - dd->rx_unaligned_len;
+	if (dd->unaligned_len && dd->read_buf) {
+		offset = dd->cur_transfer->len - dd->unaligned_len;
 		dma_coherent_post_ops();
 		memcpy(dd->read_buf + offset, dd->rx_padding,
-		       dd->rx_unaligned_len);
+		       dd->unaligned_len);
 	}
 }
 
@@ -1122,7 +1097,6 @@ static void msm_spi_process_transfer(struct msm_spi *dd)
 		}
 	} while (msm_spi_dm_send_next(dd));
 
-	msm_spi_udelay(dd->cur_transfer->delay_usecs);
 transfer_end:
 	if (dd->mode == SPI_DMOV_MODE)
 		msm_spi_unmap_dma_buffers(dd);
@@ -1216,8 +1190,6 @@ static void msm_spi_process_message(struct msm_spi *dd)
 	int xfrs_grped = 0;
 	int cs_num;
 	int rc;
-	bool xfer_delay = false;
-	struct spi_transfer *tr;
 
 	dd->write_xfr_cnt = dd->read_xfr_cnt = 0;
 	cs_num = dd->cur_msg->spi->chip_select;
@@ -1235,21 +1207,8 @@ static void msm_spi_process_message(struct msm_spi *dd)
 		dd->cs_gpios[cs_num].valid = 1;
 	}
 
-	list_for_each_entry(tr,
-				&dd->cur_msg->transfers,
-				transfer_list) {
-		if (tr->delay_usecs) {
-			dev_info(dd->dev, "SPI slave requests delay per txn :%d",
-					tr->delay_usecs);
-			xfer_delay = true;
-			break;
-		}
-	}
-
-	/* Don't combine xfers if delay is needed after every xfer */
-	if (dd->qup_ver || xfer_delay) {
-		if (dd->qup_ver)
-			write_force_cs(dd, 0);
+	if (dd->qup_ver) {
+		write_force_cs(dd, 0);
 		list_for_each_entry(dd->cur_transfer,
 				&dd->cur_msg->transfers,
 				transfer_list) {
@@ -1261,10 +1220,9 @@ static void msm_spi_process_message(struct msm_spi *dd)
 						struct spi_transfer,
 						transfer_list);
 
-				if (dd->qup_ver &&
-					t->cs_change == nxt->cs_change)
+				if (t->cs_change == nxt->cs_change)
 					write_force_cs(dd, 1);
-				else if (dd->qup_ver)
+				else
 					write_force_cs(dd, 0);
 			}
 
@@ -1336,7 +1294,6 @@ static void msm_spi_workq(struct work_struct *work)
 		container_of(work, struct msm_spi, work_data);
 	unsigned long        flags;
 	u32                  status_error = 0;
-	int                  rc = 0;
 
 	mutex_lock(&dd->core_lock);
 
@@ -1346,21 +1303,6 @@ static void msm_spi_workq(struct work_struct *work)
 				  dd->pm_lat);
 	if (dd->use_rlock)
 		remote_mutex_lock(&dd->r_lock);
-
-	/* Configure the spi clk, miso, mosi and cs gpio */
-	if (dd->pdata->gpio_config) {
-		rc = dd->pdata->gpio_config();
-		if (rc) {
-			dev_err(dd->dev,
-					"%s: error configuring GPIOs\n",
-					__func__);
-			status_error = 1;
-		}
-	}
-
-	rc = msm_spi_request_gpios(dd);
-	if (rc)
-		status_error = 1;
 
 	clk_prepare_enable(dd->clk);
 	clk_prepare_enable(dd->pclk);
@@ -1392,12 +1334,6 @@ static void msm_spi_workq(struct work_struct *work)
 	msm_spi_disable_irqs(dd);
 	clk_disable_unprepare(dd->clk);
 	clk_disable_unprepare(dd->pclk);
-
-	/* Free  the spi clk, miso, mosi, cs gpio */
-	if (!rc && dd->pdata && dd->pdata->gpio_release)
-		dd->pdata->gpio_release();
-	if (!rc)
-		msm_spi_free_gpios(dd);
 
 	if (dd->use_rlock)
 		remote_mutex_unlock(&dd->r_lock);
@@ -1485,24 +1421,6 @@ static int msm_spi_setup(struct spi_device *spi)
 	if (dd->use_rlock)
 		remote_mutex_lock(&dd->r_lock);
 
-	/* Configure the spi clk, miso, mosi, cs gpio */
-	if (dd->pdata->gpio_config) {
-		rc = dd->pdata->gpio_config();
-		if (rc) {
-			dev_err(&spi->dev,
-					"%s: error configuring GPIOs\n",
-					__func__);
-			rc = -ENXIO;
-			goto err_setup_gpio;
-		}
-	}
-
-	rc = msm_spi_request_gpios(dd);
-	if (rc) {
-		rc = -ENXIO;
-		goto err_setup_gpio;
-	}
-
 	clk_prepare_enable(dd->clk);
 	clk_prepare_enable(dd->pclk);
 
@@ -1535,15 +1453,10 @@ static int msm_spi_setup(struct spi_device *spi)
 	clk_disable_unprepare(dd->clk);
 	clk_disable_unprepare(dd->pclk);
 
-	/* Free  the spi clk, miso, mosi, cs gpio */
-	if (dd->pdata && dd->pdata->gpio_release)
-		dd->pdata->gpio_release();
-	msm_spi_free_gpios(dd);
-
-err_setup_gpio:
 	if (dd->use_rlock)
 		remote_mutex_unlock(&dd->r_lock);
 	mutex_unlock(&dd->core_lock);
+
 err_setup_exit:
 	return rc;
 }
@@ -1616,8 +1529,7 @@ static ssize_t show_stats(struct device *dev, struct device_attribute *attr,
 			"use_dma ?    %s\n"
 			"rx block size = %d bytes\n"
 			"tx block size = %d bytes\n"
-			"input burst size = %d bytes\n"
-			"output burst size = %d bytes\n"
+			"burst size = %d bytes\n"
 			"DMA configuration:\n"
 			"tx_ch=%d, rx_ch=%d, tx_crci= %d, rx_crci=%d\n"
 			"--statistics--\n"
@@ -1632,8 +1544,7 @@ static ssize_t show_stats(struct device *dev, struct device_attribute *attr,
 			dd->use_dma ? "yes" : "no",
 			dd->input_block_size,
 			dd->output_block_size,
-			dd->input_burst_size,
-			dd->output_burst_size,
+			dd->burst_size,
 			dd->tx_dma_chan,
 			dd->rx_dma_chan,
 			dd->tx_dma_crci,
@@ -1762,15 +1673,12 @@ static void spi_dmov_rx_complete_func(struct msm_dmov_cmd *cmd,
 	}
 }
 
-static inline u32 get_chunk_size(struct msm_spi *dd, int input_burst_size,
-			int output_burst_size)
+static inline u32 get_chunk_size(struct msm_spi *dd)
 {
 	u32 cache_line = dma_get_cache_alignment();
-	int burst_size = (input_burst_size > output_burst_size) ?
-		input_burst_size : output_burst_size;
 
 	return (roundup(sizeof(struct spi_dmov_cmd), DM_BYTE_ALIGN) +
-			  roundup(burst_size, cache_line))*2;
+			  roundup(dd->burst_size, cache_line))*2;
 }
 
 static void msm_spi_teardown_dma(struct msm_spi *dd)
@@ -1786,10 +1694,8 @@ static void msm_spi_teardown_dma(struct msm_spi *dd)
 		msleep(10);
 	}
 
-	dma_free_coherent(NULL,
-		get_chunk_size(dd, dd->input_burst_size, dd->output_burst_size),
-		dd->tx_dmov_cmd,
-		dd->tx_dmov_cmd_dma);
+	dma_free_coherent(NULL, get_chunk_size(dd), dd->tx_dmov_cmd,
+			  dd->tx_dmov_cmd_dma);
 	dd->tx_dmov_cmd = dd->rx_dmov_cmd = NULL;
 	dd->tx_padding = dd->rx_padding = NULL;
 }
@@ -1803,11 +1709,8 @@ static __init int msm_spi_init_dma(struct msm_spi *dd)
 
 	/* We send NULL device, since it requires coherent_dma_mask id
 	   device definition, we're okay with using system pool */
-	dd->tx_dmov_cmd
-		= dma_alloc_coherent(NULL,
-			get_chunk_size(dd, dd->input_burst_size,
-				dd->output_burst_size),
-			&dd->tx_dmov_cmd_dma, GFP_KERNEL);
+	dd->tx_dmov_cmd = dma_alloc_coherent(NULL, get_chunk_size(dd),
+					     &dd->tx_dmov_cmd_dma, GFP_KERNEL);
 	if (dd->tx_dmov_cmd == NULL)
 		return -ENOMEM;
 
@@ -1821,9 +1724,9 @@ static __init int msm_spi_init_dma(struct msm_spi *dd)
 	dd->tx_padding = (u8 *)ALIGN((size_t)&dd->rx_dmov_cmd[1], cache_line);
 	dd->tx_padding_dma = ALIGN(dd->rx_dmov_cmd_dma +
 			      sizeof(struct spi_dmov_cmd), cache_line);
-	dd->rx_padding = (u8 *)ALIGN((size_t)(dd->tx_padding +
-		dd->output_burst_size), cache_line);
-	dd->rx_padding_dma = ALIGN(dd->tx_padding_dma + dd->output_burst_size,
+	dd->rx_padding = (u8 *)ALIGN((size_t)(dd->tx_padding + dd->burst_size),
+				     cache_line);
+	dd->rx_padding_dma = ALIGN(dd->tx_padding_dma + dd->burst_size,
 				      cache_line);
 
 	/* Setup DM commands */
@@ -1915,14 +1818,6 @@ static int __init msm_spi_probe(struct platform_device *pdev)
 			goto err_probe_exit;
 		}
 
-		rc = of_property_read_u32(pdev->dev.of_node,
-				"cell-index", &pdev->id);
-		if (rc)
-			dev_warn(&pdev->dev,
-				"using default bus_num %d\n", pdev->id);
-		else
-			master->bus_num = pdev->id;
-
 		for (i = 0; i < ARRAY_SIZE(spi_rsrcs); ++i) {
 			dd->spi_gpios[i] = of_get_gpio_flags(pdev->dev.of_node,
 								i, &flags);
@@ -1990,9 +1885,22 @@ static int __init msm_spi_probe(struct platform_device *pdev)
 			dd->use_dma = 1;
 			master->dma_alignment =	dma_get_cache_alignment();
 		}
-	}
 
 skip_dma_resources:
+		if (pdata->gpio_config) {
+			rc = pdata->gpio_config();
+			if (rc) {
+				dev_err(&pdev->dev,
+					"%s: error configuring GPIOs\n",
+					__func__);
+				goto err_probe_gpio;
+			}
+		}
+	}
+
+	rc = msm_spi_request_gpios(dd);
+	if (rc)
+		goto err_probe_gpio;
 
 	spin_lock_init(&dd->queue_lock);
 	mutex_init(&dd->core_lock);
@@ -2031,8 +1939,8 @@ skip_dma_resources:
 
 		dd->use_rlock = 1;
 		dd->pm_lat = pdata->pm_lat;
-		pm_qos_add_request(&qos_req_list, PM_QOS_CPU_DMA_LATENCY,
-					PM_QOS_DEFAULT_VALUE);
+		pm_qos_add_request(&qos_req_list, PM_QOS_CPU_DMA_LATENCY, 
+					    	 PM_QOS_DEFAULT_VALUE);
 	}
 
 	mutex_lock(&dd->core_lock);
@@ -2131,7 +2039,6 @@ skip_dma_resources:
 	}
 
 	spi_debugfs_init(dd);
-
 	return 0;
 
 err_attrs:
@@ -2162,6 +2069,10 @@ err_probe_rlock_init:
 err_probe_reqmem:
 	destroy_workqueue(dd->workqueue);
 err_probe_workq:
+	msm_spi_free_gpios(dd);
+err_probe_gpio:
+	if (pdata && pdata->gpio_release)
+		pdata->gpio_release();
 err_probe_res:
 	spi_master_put(master);
 err_probe_exit:
@@ -2188,6 +2099,7 @@ static int msm_spi_suspend(struct platform_device *pdev, pm_message_t state)
 
 	/* Wait for transactions to end, or time out */
 	wait_event_interruptible(dd->continue_suspend, !dd->transfer_pending);
+	msm_spi_free_gpios(dd);
 
 suspend_exit:
 	return 0;
@@ -2204,6 +2116,7 @@ static int msm_spi_resume(struct platform_device *pdev)
 	if (!dd)
 		goto resume_exit;
 
+	BUG_ON(msm_spi_request_gpios(dd) != 0);
 	dd->suspended = 0;
 resume_exit:
 	return 0;
@@ -2217,13 +2130,17 @@ static int __devexit msm_spi_remove(struct platform_device *pdev)
 {
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct msm_spi    *dd = spi_master_get_devdata(master);
+	struct msm_spi_platform_data *pdata = pdev->dev.platform_data;
 
 	pm_qos_remove_request(&qos_req_list);
 	spi_debugfs_exit(dd);
 	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_grp);
 
 	msm_spi_teardown_dma(dd);
+	if (pdata && pdata->gpio_release)
+		pdata->gpio_release();
 
+	msm_spi_free_gpios(dd);
 	clk_put(dd->clk);
 	clk_put(dd->pclk);
 	destroy_workqueue(dd->workqueue);

@@ -1,6 +1,6 @@
 VERSION = 3
 PATCHLEVEL = 4
-SUBLEVEL = 83
+SUBLEVEL = 105
 EXTRAVERSION = -sm
 NAME = Saber-toothed Squirrel
 
@@ -351,8 +351,8 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-
-OFLAGS	= -mcpu=cortex-a5 -march=armv7-a -mfpu=neon-vfpv4 -fgraphite-identity -floop-block -floop-strip-mine -ftree-loop-distribution
+		  
+camParams.setFocusMode("auto");	=  -g0 -march=armv7-a -mfpu=neon-fp16 -mtune=cortex-a5 -O2
 
 CFLAGS_MODULE   = $(OFLAGS)
 AFLAGS_MODULE   = $(OFLAGS)
@@ -598,6 +598,8 @@ ifndef CONFIG_FUNCTION_TRACER
 KBUILD_CFLAGS	+= -fomit-frame-pointer
 endif
 endif
+
+KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
 ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g

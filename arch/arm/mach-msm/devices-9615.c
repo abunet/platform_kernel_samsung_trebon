@@ -64,22 +64,12 @@
 
 #define MSM_GPIO_I2C_CLK 16
 #define MSM_GPIO_I2C_SDA 17
-#define MSM9615_RPM_MASTER_STATS_BASE	0x10A700
 
 static struct msm_watchdog_pdata msm_watchdog_pdata = {
 	.pet_time = 10000,
 	.bark_time = 11000,
 	.has_secure = false,
 	.use_kernel_fiq = true,
-	.base = MSM_TMR_BASE + WDT0_OFFSET,
-};
-
-static struct resource msm_watchdog_resources[] = {
-	{
-		.start	= WDT0_ACCSCSSNBARK_INT,
-		.end	= WDT0_ACCSCSSNBARK_INT,
-		.flags	= IORESOURCE_IRQ,
-	},
 };
 
 struct platform_device msm9615_device_watchdog = {
@@ -88,8 +78,6 @@ struct platform_device msm9615_device_watchdog = {
 	.dev = {
 		.platform_data = &msm_watchdog_pdata,
 	},
-	.num_resources	= ARRAY_SIZE(msm_watchdog_resources),
-	.resource	= msm_watchdog_resources,
 };
 
 static struct resource msm_dmov_resource[] = {
@@ -857,19 +845,19 @@ static struct resource resources_sdc1[] = {
 	},
 #ifdef CONFIG_MMC_MSM_SPS_SUPPORT
 	{
-		.name   = "dml_mem",
+		.name   = "sdcc_dml_addr",
 		.start  = MSM_SDC1_DML_BASE,
 		.end    = MSM_SDC1_BAM_BASE - 1,
 		.flags  = IORESOURCE_MEM,
 	},
 	{
-		.name   = "bam_mem",
+		.name   = "sdcc_bam_addr",
 		.start  = MSM_SDC1_BAM_BASE,
 		.end    = MSM_SDC1_BAM_BASE + (2 * SZ_4K) - 1,
 		.flags  = IORESOURCE_MEM,
 	},
 	{
-		.name   = "bam_irq",
+		.name   = "sdcc_bam_irq",
 		.start  = SDC1_BAM_IRQ,
 		.end    = SDC1_BAM_IRQ,
 		.flags  = IORESOURCE_IRQ,
@@ -892,19 +880,19 @@ static struct resource resources_sdc2[] = {
 	},
 #ifdef CONFIG_MMC_MSM_SPS_SUPPORT
 	{
-		.name   = "dml_mem",
+		.name   = "sdcc_dml_addr",
 		.start  = MSM_SDC2_DML_BASE,
 		.end    = MSM_SDC2_BAM_BASE - 1,
 		.flags  = IORESOURCE_MEM,
 	},
 	{
-		.name   = "bam_mem",
+		.name   = "sdcc_bam_addr",
 		.start  = MSM_SDC2_BAM_BASE,
 		.end    = MSM_SDC2_BAM_BASE + (2 * SZ_4K) - 1,
 		.flags  = IORESOURCE_MEM,
 	},
 	{
-		.name   = "bam_irq",
+		.name   = "sdcc_bam_irq",
 		.start  = SDC2_BAM_IRQ,
 		.end    = SDC2_BAM_IRQ,
 		.flags  = IORESOURCE_IRQ,
@@ -1326,35 +1314,6 @@ struct platform_device msm9615_rpm_stat_device = {
 	.id = -1,
 	.dev = {
 		.platform_data = &msm_rpm_stat_pdata,
-	},
-};
-
-static struct resource resources_rpm_master_stats[] = {
-	{
-		.start	= MSM9615_RPM_MASTER_STATS_BASE,
-		.end	= MSM9615_RPM_MASTER_STATS_BASE + SZ_256,
-		.flags	= IORESOURCE_MEM,
-	},
-};
-
-static char *master_names[] = {
-	"KPSS",
-	"MPSS",
-	"LPASS",
-};
-
-static struct msm_rpm_master_stats_platform_data msm_rpm_master_stat_pdata = {
-	.masters = master_names,
-	.nomasters = ARRAY_SIZE(master_names),
-};
-
-struct platform_device msm9615_rpm_master_stat_device = {
-	.name = "msm_rpm_master_stat",
-	.id = -1,
-	.num_resources	= ARRAY_SIZE(resources_rpm_master_stats),
-	.resource	= resources_rpm_master_stats,
-	.dev = {
-		.platform_data = &msm_rpm_master_stat_pdata,
 	},
 };
 

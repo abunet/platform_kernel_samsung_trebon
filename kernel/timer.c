@@ -588,8 +588,7 @@ static inline void
 debug_activate(struct timer_list *timer, unsigned long expires)
 {
 	debug_timer_activate(timer);
-	trace_timer_start(timer, expires,
-			 tbase_get_deferrable(timer->base) > 0 ? 'y' : 'n');
+	trace_timer_start(timer, expires);
 }
 
 static inline void debug_deactivate(struct timer_list *timer)
@@ -814,9 +813,9 @@ unsigned long apply_slack(struct timer_list *timer, unsigned long expires)
 	if (mask == 0)
 		return expires;
 
-	bit = find_last_bit(&mask, BITS_PER_LONG);
+	bit = __fls(mask);
 
-	mask = (1 << bit) - 1;
+	mask = (1UL << bit) - 1;
 
 	expires_limit = expires_limit & ~(mask);
 

@@ -38,7 +38,7 @@
 #include <linux/delay.h>
 #include <linux/earlysuspend.h>
 #include <linux/list.h>
-#include <linux/msm_ion.h>
+#include <linux/ion.h>
 #include <linux/slab.h>
 #include <linux/msm_audio.h>
 
@@ -48,6 +48,7 @@
 #include <mach/iommu_domains.h>
 #include <mach/qdsp5/qdsp5audppcmdi.h>
 #include <mach/qdsp5/qdsp5audppmsg.h>
+#include <mach/qdsp5/qdsp5audpp.h>
 #include <mach/qdsp5/qdsp5audplaycmdi.h>
 #include <mach/qdsp5/qdsp5audplaymsg.h>
 #include <mach/qdsp5/qdsp5rmtcmdi.h>
@@ -298,9 +299,10 @@ static int audio_enable(struct audio *audio)
 	cfg.snd_method = RPC_SND_METHOD_MIDI;
 
 	rc = audmgr_enable(&audio->audmgr, &cfg);
-	if (rc < 0)
+	if (rc < 0) {
+		msm_adsp_dump(audio->audplay);
 		return rc;
-
+	}
 	if (msm_adsp_enable(audio->audplay)) {
 		MM_ERR("msm_adsp_enable(audplay) failed\n");
 		audmgr_disable(&audio->audmgr);
@@ -340,7 +342,9 @@ static int audio_disable(struct audio *audio)
 		wake_up(&audio->write_wait);
 		msm_adsp_disable(audio->audplay);
 		audpp_disable(audio->dec_id, audio);
-		audmgr_disable(&audio->audmgr);
+		rc = audmgr_disable(&audio->audmgr);
+		if (rc < 0)
+			msm_adsp_dump(audio->audplay);
 		audio->out_needed = 0;
 		rmt_put_resource(audio);
 		audio->rmt_resource_released = 1;
@@ -822,7 +826,7 @@ static int audpcm_ion_add(struct audio *audio,
 		pr_err("%s: could not get flags for the handle\n", __func__);
 		goto flag_error;
 	}
-	kvaddr = (unsigned long)ion_map_kernel(audio->client, handle);
+	kvaddr = (unsigned long)ion_map_kernel(audio->client, handle, ionflag);
 	if (IS_ERR_OR_NULL((void *)kvaddr)) {
 		pr_err("%s: could not get virtual address\n", __func__);
 		goto map_error;
@@ -1575,7 +1579,7 @@ static int audio_open(struct inode *inode, struct file *file)
 		MM_DBG("memsz = %d\n", mem_sz);
 
 		handle = ion_alloc(client, mem_sz, SZ_4K,
-			ION_HEAP(ION_AUDIO_HEAP_ID), 0);
+			ION_HEAP(ION_AUDIO_HEAP_ID));
 		if (IS_ERR_OR_NULL(handle)) {
 			MM_ERR("Unable to create allocate O/P buffers\n");
 			rc = -ENOMEM;
@@ -1601,7 +1605,7 @@ static int audio_open(struct inode *inode, struct file *file)
 			goto output_buff_get_flags_error;
 		}
 
-		audio->map_v_write = ion_map_kernel(client, handle);
+		audio->map_v_write = ion_map_kernel(client, handle, ionflag);
 		if (IS_ERR(audio->map_v_write)) {
 			MM_ERR("could not map write buffers\n");
 			rc = -ENOMEM;

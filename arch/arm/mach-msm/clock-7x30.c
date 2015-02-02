@@ -24,6 +24,7 @@
 #include <linux/string.h>
 
 #include <mach/msm_iomap.h>
+#include <mach/clk.h>
 #include <mach/proc_comm.h>
 
 #include "clock.h"
@@ -160,8 +161,7 @@ enum vdd_dig_levels {
 	VDD_DIG_NONE,
 	VDD_DIG_LOW,
 	VDD_DIG_NOMINAL,
-	VDD_DIG_HIGH,
-	VDD_DIG_NUM
+	VDD_DIG_HIGH
 };
 
 static int set_vdd_dig(struct clk_vdd_class *vdd_class, int level)
@@ -185,21 +185,15 @@ static int set_vdd_dig(struct clk_vdd_class *vdd_class, int level)
 	return rc;
 }
 
-static DEFINE_VDD_CLASS(vdd_dig, set_vdd_dig, VDD_DIG_NUM);
+static DEFINE_VDD_CLASS(vdd_dig, set_vdd_dig);
 
 #define VDD_DIG_FMAX_MAP1(l1, f1) \
-	.vdd_class = &vdd_dig,			\
-	.fmax = (unsigned long[VDD_DIG_NUM]) {	\
-		[VDD_DIG_##l1] = (f1),		\
-	},					\
-	.num_fmax = VDD_DIG_NUM
+	.vdd_class = &vdd_dig, \
+	.fmax[VDD_DIG_##l1] = (f1)
 #define VDD_DIG_FMAX_MAP2(l1, f1, l2, f2) \
-	.vdd_class = &vdd_dig,			\
-	.fmax = (unsigned long[VDD_DIG_NUM]) {	\
-		[VDD_DIG_##l1] = (f1),		\
-		[VDD_DIG_##l2] = (f2),		\
-	},					\
-	.num_fmax = VDD_DIG_NUM
+	.vdd_class = &vdd_dig, \
+	.fmax[VDD_DIG_##l1] = (f1), \
+	.fmax[VDD_DIG_##l2] = (f2)
 
 #define PCOM_XO_DISABLE	0
 #define PCOM_XO_ENABLE	1
@@ -245,6 +239,7 @@ static struct fixed_clk tcxo_clk = {
 		.rate = 19200000,
 		.ops = &clk_ops_tcxo,
 		CLK_INIT(tcxo_clk.c),
+		.warned = true,
 	},
 };
 
@@ -271,6 +266,7 @@ static struct fixed_clk lpxo_clk = {
 		.rate = 24576000,
 		.ops = &clk_ops_lpxo,
 		CLK_INIT(lpxo_clk.c),
+		.warned = true,
 	},
 };
 
@@ -285,6 +281,7 @@ static struct pll_vote_clk pll1_clk = {
 		.rate = 768000000,
 		.ops = &clk_ops_pll_vote,
 		CLK_INIT(pll1_clk.c),
+		.warned = true,
 	},
 };
 
@@ -299,6 +296,7 @@ static struct pll_vote_clk pll2_clk = {
 		.rate = 806400000, /* TODO: Support scaling */
 		.ops = &clk_ops_pll_vote,
 		CLK_INIT(pll2_clk.c),
+		.warned = true,
 	},
 };
 
@@ -327,6 +325,7 @@ static struct pll_vote_clk pll4_clk = {
 		.rate = 891000000,
 		.ops = &clk_ops_pll_vote,
 		CLK_INIT(pll4_clk.c),
+		.warned = true,
 	},
 };
 

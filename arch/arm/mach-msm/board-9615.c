@@ -29,7 +29,7 @@
 #include <linux/power/ltc4088-charger.h>
 #include <linux/gpio.h>
 #include <linux/msm_tsens.h>
-#include <linux/msm_ion.h>
+#include <linux/ion.h>
 #include <linux/memory.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -50,7 +50,6 @@
 #include "devices.h"
 #include "board-9615.h"
 #include "pm.h"
-#include "clock.h"
 #include "pm-boot.h"
 #include <mach/gpiomux.h>
 #include "ci13xxx_udc.h"
@@ -935,7 +934,6 @@ static struct platform_device *common_devices[] = {
 	&msm_bus_def_fab,
 	&msm9615_rpm_log_device,
 	&msm9615_rpm_stat_device,
-	&msm9615_rpm_master_stat_device,
 	&msm_tsens_device,
 };
 

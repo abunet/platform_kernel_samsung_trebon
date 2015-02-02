@@ -41,17 +41,6 @@ extern int freeze_kernel_threads(void);
 extern void thaw_processes(void);
 extern void thaw_kernel_threads(void);
 
-/*
- * HACK: prevent sleeping while atomic warnings due to ARM signal handling
- * disabling irqs
- */
-static inline bool try_to_freeze_nowarn(void)
-{
-	if (likely(!freezing(current)))
-		return false;
-	return __refrigerator(false);
-}
-
 static inline bool try_to_freeze(void)
 {
 /* This causes problems for ARM targets and is a known
@@ -168,16 +157,6 @@ static inline bool freezer_should_skip(struct task_struct *p)
 	long __retval;							\
 	freezer_do_not_count();						\
 	__retval = schedule_timeout_killable(timeout);			\
-	freezer_count();						\
-	__retval;							\
-})
-
-/* Like schedule_timeout_interruptible(), but should not block the freezer. */
-#define freezable_schedule_timeout_interruptible(timeout)		\
-({									\
-	long __retval;							\
-	freezer_do_not_count();						\
-	__retval = schedule_timeout_interruptible(timeout);		\
 	freezer_count();						\
 	__retval;							\
 })

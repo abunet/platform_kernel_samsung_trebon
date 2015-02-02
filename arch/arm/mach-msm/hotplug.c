@@ -43,7 +43,7 @@ static inline void cpu_leave_lowpower(void)
 {
 }
 
-static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
+static inline void platform_do_lowpower(unsigned int cpu)
 {
 	/* Just enter wfi for now. TODO: Properly shut off the cpu. */
 	for (;;) {
@@ -53,6 +53,9 @@ static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
 			/*
 			 * OK, proper wakeup, we're done
 			 */
+			pen_release = -1;
+			dmac_flush_range((void *)&pen_release,
+				(void *)(&pen_release + sizeof(pen_release)));
 			break;
 		}
 
@@ -64,7 +67,9 @@ static inline void platform_do_lowpower(unsigned int cpu, int *spurious)
 		 * possible, since we are currently running incoherently, and
 		 * therefore cannot safely call printk() or anything else
 		 */
-		(*spurious)++;
+		dmac_inv_range((void *)&pen_release,
+			       (void *)(&pen_release + sizeof(pen_release)));
+		pr_debug("CPU%u: spurious wakeup call\n", cpu);
 	}
 }
 
@@ -80,8 +85,6 @@ int platform_cpu_kill(unsigned int cpu)
  */
 void platform_cpu_die(unsigned int cpu)
 {
-	int spurious = 0;
-
 	if (unlikely(cpu != smp_processor_id())) {
 		pr_crit("%s: running on %u, should be %u\n",
 			__func__, smp_processor_id(), cpu);
@@ -92,13 +95,10 @@ void platform_cpu_die(unsigned int cpu)
 	 * we're ready for shutdown now, so do it
 	 */
 	cpu_enter_lowpower();
-	platform_do_lowpower(cpu, &spurious);
+	platform_do_lowpower(cpu);
 
 	pr_debug("CPU%u: %s: normal wakeup\n", cpu, __func__);
 	cpu_leave_lowpower();
-
-	if (spurious)
-		pr_warn("CPU%u: %u spurious wakeup calls\n", cpu, spurious);
 }
 
 int platform_cpu_disable(unsigned int cpu)

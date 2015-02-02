@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
+#include <linux/io.h>
 #include <linux/irq.h>
 #include <asm/fiq.h>
 #include <asm/hardware/gic.h>
@@ -75,7 +76,7 @@ static int __init msm_setup_fiq_handler(void)
 
 static int __init init7k_fiq(void)
 {
-	if (!cpu_is_msm8625() && !cpu_is_msm8625q())
+	if (!cpu_is_msm8625())
 		return 0;
 
 	if (msm_setup_fiq_handler())

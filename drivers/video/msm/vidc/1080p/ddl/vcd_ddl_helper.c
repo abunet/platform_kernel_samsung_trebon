@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  *
  */
-#include <linux/msm_ion.h>
+#include <linux/ion.h>
 #include <mach/msm_memtypes.h>
 #include "vcd_ddl.h"
 #include "vcd_ddl_shared_mem.h"
@@ -278,8 +278,7 @@ u32 ddl_decoder_dpb_init(struct ddl_client_context *ddl)
 				memset(frame[i].vcd_frm.virtual + luma_size,
 					 0x80808080,
 					frame[i].vcd_frm.alloc_len - luma_size);
-				if (frame[i].vcd_frm.ion_flag
-					== ION_FLAG_CACHED) {
+				if (frame[i].vcd_frm.ion_flag == CACHED) {
 					msm_ion_do_cache_op(
 					ddl_context->video_ion_client,
 					frame[i].vcd_frm.buff_ion_handle,
@@ -472,7 +471,7 @@ struct ddl_client_context *ddl_get_current_ddl_client_for_channel_id(
 		ddl = ddl_context->current_ddl[1];
 	else {
 		DDL_MSG_LOW("STATE-CRITICAL-FRMRUN");
-		DDL_MSG_LOW("Unexpected channel ID = %d", channel_id);
+		DDL_MSG_ERROR("Unexpected channel ID = %d", channel_id);
 		ddl = NULL;
 	}
 	return ddl;
@@ -505,8 +504,6 @@ u32 ddl_get_yuv_buf_size(u32 width, u32 height, u32 format)
 
 	width_round_up  = width;
 	height_round_up = height;
-	align = SZ_4K;
-
 	if (format == DDL_YUV_BUF_TYPE_TILE) {
 		width_round_up  = DDL_ALIGN(width, DDL_TILE_ALIGN_WIDTH);
 		height_round_up = DDL_ALIGN(height, DDL_TILE_ALIGN_HEIGHT);
@@ -536,7 +533,6 @@ void ddl_free_dec_hw_buffers(struct ddl_client_context *ddl)
 	ddl_pmem_free(&dec_bufs->stx_parser);
 	ddl_pmem_free(&dec_bufs->desc);
 	ddl_pmem_free(&dec_bufs->context);
-	ddl_pmem_free(&dec_bufs->extnuserdata);
 	memset(dec_bufs, 0, sizeof(struct ddl_dec_buffers));
 }
 
@@ -605,7 +601,6 @@ void ddl_calc_dec_hw_buffers_size(enum vcd_codec codec, u32 width,
 	u32 sz_sub_anchor_mv = 0, sz_overlap_xform = 0, sz_bit_plane3 = 0;
 	u32 sz_bit_plane2 = 0, sz_bit_plane1 = 0, sz_stx_parser = 0;
 	u32 sz_desc, sz_cpb, sz_context, sz_vert_nb_mv = 0, sz_nb_ip = 0;
-	u32 sz_extnuserdata = 0;
 
 	if (codec == VCD_CODEC_H264) {
 		sz_mv = ddl_get_yuv_buf_size(width,
@@ -635,8 +630,7 @@ void ddl_calc_dec_hw_buffers_size(enum vcd_codec codec, u32 width,
 			sz_bit_plane3 = DDL_KILO_BYTE(2);
 			sz_bit_plane2 = DDL_KILO_BYTE(2);
 			sz_bit_plane1 = DDL_KILO_BYTE(2);
-		} else if (codec == VCD_CODEC_MPEG2)
-			sz_extnuserdata = DDL_KILO_BYTE(2);
+		}
 	}
 	sz_desc = DDL_KILO_BYTE(128);
 	sz_cpb = VCD_DEC_CPB_SIZE;
@@ -663,7 +657,6 @@ void ddl_calc_dec_hw_buffers_size(enum vcd_codec codec, u32 width,
 		buf_size->sz_desc           = sz_desc;
 		buf_size->sz_cpb            = sz_cpb;
 		buf_size->sz_context        = sz_context;
-		buf_size->sz_extnuserdata   = sz_extnuserdata;
 	}
 }
 
@@ -781,16 +774,6 @@ u32 ddl_allocate_dec_hw_buffers(struct ddl_client_context *ddl)
 			}
 		}
 	}
-	if (buf_size.sz_extnuserdata > 0) {
-		dec_bufs->extnuserdata.mem_type = DDL_CMD_MEM;
-		ptr = ddl_pmem_alloc(&dec_bufs->extnuserdata,
-				buf_size.sz_extnuserdata, DDL_KILO_BYTE(2));
-		if (!ptr)
-			goto fail_free_exit;
-		else
-			memset(dec_bufs->extnuserdata.align_virtual_addr,
-				0, buf_size.sz_extnuserdata);
-	}
 	return status;
 fail_free_exit:
 	status = VCD_ERR_ALLOC_FAIL;
@@ -814,13 +797,13 @@ u32 ddl_calc_enc_hw_buffers_size(enum vcd_codec codec, u32 width,
 		height, DDL_YUV_BUF_TYPE_TILE);
 	sz_dpb_c = ddl_get_yuv_buf_size(width, height>>1,
 		DDL_YUV_BUF_TYPE_TILE);
-	if ((input_format == VCD_BUFFER_FORMAT_NV12_16M2KA) ||
-		(input_format == VCD_BUFFER_FORMAT_NV21_16M2KA)) {
+	if (input_format ==
+		VCD_BUFFER_FORMAT_NV12_16M2KA) {
 		sz_cur_y = ddl_get_yuv_buf_size(width, height,
 			DDL_YUV_BUF_TYPE_LINEAR);
 		sz_cur_c = ddl_get_yuv_buf_size(width, height>>1,
 			DDL_YUV_BUF_TYPE_LINEAR);
-	} else if (input_format == VCD_BUFFER_FORMAT_TILE_4x2) {
+	} else if (VCD_BUFFER_FORMAT_TILE_4x2 == input_format) {
 		sz_cur_y = sz_dpb_y;
 		sz_cur_c = sz_dpb_c;
 	} else

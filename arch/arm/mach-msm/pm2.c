@@ -1180,8 +1180,7 @@ static int msm_pm_power_collapse
 		WARN_ON(ret);
 	}
 
-	/* Call CPR resume only for "idlePC" case */
-	if (msm_cpr_ops && from_idle)
+	if (msm_cpr_ops)
 		msm_cpr_ops->cpr_resume();
 
 	return 0;

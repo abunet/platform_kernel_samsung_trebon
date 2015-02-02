@@ -73,19 +73,19 @@ struct rmidev_data {
 };
 
 static struct device_attribute attrs[] = {
-	__ATTR(open, S_IWUGO,
+	__ATTR(open, S_IRUGO | S_IWUSR | S_IWGRP,
 			synaptics_rmi4_show_error,
 			rmidev_sysfs_open_store),
-	__ATTR(release, S_IWUGO,
+	__ATTR(release, S_IRUGO | S_IWUSR | S_IWGRP,
 			synaptics_rmi4_show_error,
 			rmidev_sysfs_release_store),
-	__ATTR(address, S_IWUGO,
+	__ATTR(address, S_IRUGO | S_IWUSR | S_IWGRP,
 			synaptics_rmi4_show_error,
 			rmidev_sysfs_address_store),
-	__ATTR(length, S_IWUGO,
+	__ATTR(length, S_IRUGO | S_IWUSR | S_IWGRP,
 			synaptics_rmi4_show_error,
 			rmidev_sysfs_length_store),
-	__ATTR(data, (S_IRUGO | S_IWUGO),
+	__ATTR(data, S_IRUGO | S_IWUSR | S_IWGRP,
 			rmidev_sysfs_data_show,
 			rmidev_sysfs_data_store),
 };
@@ -706,4 +706,5 @@ module_exit(rmidev_module_exit);
 
 MODULE_AUTHOR("Synaptics, Inc.");
 MODULE_DESCRIPTION("RMI4 RMI_Dev Module");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(SYNAPTICS_RMI4_DRIVER_VERSION);

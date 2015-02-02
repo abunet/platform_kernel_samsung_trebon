@@ -1,5 +1,6 @@
-Android-SpeedKernel caf 
-Android kernel caf for samsung galaxy Ace Plus (GT-S7500)
+Android_SpeedKernel
+==============
+Android Speedkernel  samsung galaxy Ace Plus (GT-S7500)
 
 http://www.androidiani.com/forum/samsung-galaxy-ace-plus-modding/299846-rom-speed-mod.html
 

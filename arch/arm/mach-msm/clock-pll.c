@@ -225,7 +225,7 @@ int sr_pll_clk_enable(struct clk *c)
 
 #define PLL_LOCKED_BIT BIT(16)
 
-int sr_hpm_lp_pll_clk_enable(struct clk *c)
+int msm8974_pll_clk_enable(struct clk *c)
 {
 	unsigned long flags;
 	struct pll_clk *pll = to_pll_clk(c);
@@ -233,12 +233,23 @@ int sr_hpm_lp_pll_clk_enable(struct clk *c)
 	int ret = 0;
 
 	spin_lock_irqsave(&pll_reg_lock, flags);
-
-	/* Disable PLL bypass mode and de-assert reset. */
-	mode = PLL_BYPASSNL | PLL_RESET_N;
+	mode = readl_relaxed(PLL_MODE_REG(pll));
+	/* Disable PLL bypass mode. */
+	mode |= PLL_BYPASSNL;
 	writel_relaxed(mode, PLL_MODE_REG(pll));
 
-	/* Wait for pll to lock. */
+	/*
+	 * H/W requires a 5us delay between disabling the bypass and
+	 * de-asserting the reset. Delay 10us just to be safe.
+	 */
+	mb();
+	udelay(10);
+
+	/* De-assert active-low PLL reset. */
+	mode |= PLL_RESET_N;
+	writel_relaxed(mode, PLL_MODE_REG(pll));
+
+	/* Wait for pll to enable. */
 	for (count = ENABLE_WAIT_MAX_LOOPS; count > 0; count--) {
 		if (readl_relaxed(PLL_STATUS_REG(pll)) & PLL_LOCKED_BIT)
 			break;
@@ -282,6 +293,7 @@ static struct pll_rate pll_l_rate[] = {
 	{41, 800000000},
 	{50, 960000000},
 	{52, 1008000000},
+	{57, 1104000000},
 	{60, 1152000000},
 	{62, 1200000000},
 	{63, 1209600000},
@@ -419,8 +431,7 @@ struct clk_ops clk_ops_pll = {
 	.is_enabled = pll_clk_is_enabled,
 };
 
-static void __init __set_fsm_mode(void __iomem *mode_reg,
-					u32 bias_count, u32 lock_count)
+static void __init __set_fsm_mode(void __iomem *mode_reg)
 {
 	u32 regval = readl_relaxed(mode_reg);
 
@@ -430,12 +441,12 @@ static void __init __set_fsm_mode(void __iomem *mode_reg,
 
 	/* Program bias count */
 	regval &= ~BM(19, 14);
-	regval |= BVAL(19, 14, bias_count);
+	regval |= BVAL(19, 14, 0x1);
 	writel_relaxed(regval, mode_reg);
 
 	/* Program lock count */
 	regval &= ~BM(13, 8);
-	regval |= BVAL(13, 8, lock_count);
+	regval |= BVAL(13, 8, 0x8);
 	writel_relaxed(regval, mode_reg);
 
 	/* Enable PLL FSM voting */
@@ -443,7 +454,7 @@ static void __init __set_fsm_mode(void __iomem *mode_reg,
 	writel_relaxed(regval, mode_reg);
 }
 
-void __init __configure_pll(struct pll_config *config,
+void __init configure_pll(struct pll_config *config,
 		struct pll_config_regs *regs, u32 ena_fsm_mode)
 {
 	u32 regval;
@@ -476,21 +487,8 @@ void __init __configure_pll(struct pll_config *config,
 	regval &= ~config->vco_mask;
 	regval |= config->vco_val;
 	writel_relaxed(regval, PLL_CONFIG_REG(regs));
-}
 
-void __init configure_sr_pll(struct pll_config *config,
-		struct pll_config_regs *regs, u32 ena_fsm_mode)
-{
-	__configure_pll(config, regs, ena_fsm_mode);
+	/* Configure in FSM mode if necessary */
 	if (ena_fsm_mode)
-		__set_fsm_mode(PLL_MODE_REG(regs), 0x1, 0x8);
+		__set_fsm_mode(PLL_MODE_REG(regs));
 }
-
-void __init configure_sr_hpm_lp_pll(struct pll_config *config,
-		struct pll_config_regs *regs, u32 ena_fsm_mode)
-{
-	__configure_pll(config, regs, ena_fsm_mode);
-	if (ena_fsm_mode)
-		__set_fsm_mode(PLL_MODE_REG(regs), 0x1, 0x0);
-}
-

@@ -12,12 +12,12 @@
 #define GPIO_LCD_R_2			10
 #define GPIO_LCD_R_1			11
 #define GPIO_LCD_R_0			12
-							/* 13 */
-							/* 14 */
+#define GPIO_LCD_G_7			13
+#define GPIO_LCD_G_6			14
 #define GPIO_CAM_MCLK			15
 							/* 16 */
 							/* 17 */
-#define GPIO_SENSOR_SCL			16
+#define GPIO_SENSOR_SCL 		16
 #define GPIO_SENSOR_SDA			17
 #ifdef	CONFIG_JENA_REV00
 #define GPIO_ON_SW				18
@@ -70,7 +70,7 @@
 #define GPIO_MICROSD_CMD		55
 #define GPIO_MICROSD_CLK		56
 #define GPIO_LCD_SDA			57
-							/* 58 */
+#define GPIO_FM_SCL				58
 #define GPIO_SBDT_RTR6285A		59
 #define GPIO_CAM_I2C_SCL		60
 #define GPIO_CAM_I2C_SDA		61
@@ -155,7 +155,7 @@
 #define GPIO_LCD_G_1			111
 #define GPIO_LCD_G_0			112
 #define GPIO_LCD_B_7			113
-							/* 114 */
+#define GPIO_LCD_B_6			114
 #define GPIO_LCD_B_5			115
 #define GPIO_LCD_B_4			116
 #define GPIO_LCD_B_3			117
@@ -178,13 +178,5 @@
 #define GPIO_LCD_G_5			130
 #define GPIO_I2C_SCL			131
 #define GPIO_I2C_SDA			132
-
-#if defined(CONFIG_PN544)
-#define GPIO_NFC_SDA			13
-#define GPIO_NFC_SCL			14
-#define GPIO_NFC_FIRM			49
-#define GPIO_NFC_EN				58
-#define GPIO_NFC_IRQ			114
-#endif
 
 #endif	/* __GPIO_JENA_H_ */

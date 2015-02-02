@@ -18,8 +18,6 @@
 #include "diagchar.h"
 #include "diagfwd.h"
 #include "diagfwd_smux.h"
-#include "diagfwd_hsic.h"
-#include "diagfwd_bridge.h"
 
 void diag_smux_event(void *priv, int event_type, const void *metadata)
 {
@@ -28,17 +26,13 @@ void diag_smux_event(void *priv, int event_type, const void *metadata)
 
 	switch (event_type) {
 	case SMUX_CONNECTED:
-		pr_info("diag: SMUX_CONNECTED received\n");
-		driver->smux_connected = 1;
+		pr_debug("diag: SMUX_CONNECTED received\n");
 		driver->in_busy_smux = 0;
 		/* read data from USB MDM channel & Initiate first write */
-		queue_work(diag_bridge[SMUX].wq,
-			   &diag_bridge[SMUX].diag_read_work);
+		queue_work(driver->diag_bridge_wq,
+				 &(driver->diag_read_mdm_work));
 		break;
 	case SMUX_DISCONNECTED:
-		driver->smux_connected = 0;
-		driver->lcid = LCID_INVALID;
-		msm_smux_close(LCID_VALID);
 		pr_info("diag: SMUX_DISCONNECTED received\n");
 		break;
 	case SMUX_WRITE_DONE:
@@ -69,7 +63,7 @@ int diagfwd_write_complete_smux(void)
 
 int diagfwd_read_complete_smux(void)
 {
-	queue_work(diag_bridge[SMUX].wq, &diag_bridge[SMUX].diag_read_work);
+	queue_work(driver->diag_bridge_wq, &(driver->diag_read_mdm_work));
 	return 0;
 }
 
@@ -85,36 +79,6 @@ int diag_get_rx_buffer(void *priv, void **pkt_priv, void **buffer, int size)
 		return -EAGAIN;
 	}
 	return 0;
-}
-
-void diag_usb_read_complete_smux_fn(struct work_struct *w)
-{
-	diagfwd_read_complete_bridge(diag_bridge[SMUX].usb_read_ptr);
-}
-
-void diag_read_usb_smux_work_fn(struct work_struct *work)
-{
-	int ret;
-
-	if (driver->diag_smux_enabled) {
-		if (driver->lcid && diag_bridge[SMUX].usb_buf_out &&
-			(diag_bridge[SMUX].read_len > 0) &&
-				driver->smux_connected) {
-			ret = msm_smux_write(driver->lcid, NULL,
-			      diag_bridge[SMUX].usb_buf_out,
-				 diag_bridge[SMUX].read_len);
-			if (ret)
-				pr_err("diag: writing to SMUX ch, r = %d, lcid = %d\n",
-						 ret, driver->lcid);
-		}
-		diag_bridge[SMUX].usb_read_ptr->buf =
-					 diag_bridge[SMUX].usb_buf_out;
-		diag_bridge[SMUX].usb_read_ptr->length = USB_MAX_OUT_BUF;
-		diag_bridge[SMUX].usb_read_ptr->context = (void *)SMUX;
-		usb_diag_read(diag_bridge[SMUX].ch,
-					 diag_bridge[SMUX].usb_read_ptr);
-		return;
-	}
 }
 
 static int diagfwd_smux_runtime_suspend(struct device *dev)
@@ -148,11 +112,10 @@ int diagfwd_connect_smux(void)
 			pr_info("diag: open SMUX ch, r = %d\n", ret);
 		} else {
 			pr_err("diag: failed to open SMUX ch, r = %d\n", ret);
-			return ret;
 		}
 	}
 	/* Poll USB channel to check for data*/
-	queue_work(diag_bridge[SMUX].wq, &(diag_bridge[SMUX].diag_read_work));
+	queue_work(driver->diag_bridge_wq, &(driver->diag_read_mdm_work));
 	return ret;
 }
 
@@ -174,11 +137,6 @@ static int diagfwd_smux_probe(struct platform_device *pdev)
 	 * if (ret)
 	 *	pr_err("diag: error setting SMUX ch option, r = %d\n", ret);
 	 */
-	if (driver->write_ptr_mdm == NULL)
-		driver->write_ptr_mdm = kzalloc(sizeof(struct diag_request),
-								 GFP_KERNEL);
-	if (driver->write_ptr_mdm == NULL)
-		goto err;
 	ret = diagfwd_connect_smux();
 	return ret;
 
@@ -188,20 +146,8 @@ err:
 	return ret;
 }
 
-static int diagfwd_smux_remove(struct platform_device *pdev)
-{
-	driver->lcid = LCID_INVALID;
-	driver->smux_connected = 0;
-	driver->diag_smux_enabled = 0;
-	driver->in_busy_smux = 1;
-	kfree(driver->buf_in_smux);
-	driver->buf_in_smux = NULL;
-	return 0;
-}
-
 struct platform_driver msm_diagfwd_smux_driver = {
 	.probe = diagfwd_smux_probe,
-	.remove = diagfwd_smux_remove,
 	.driver = {
 		   .name = "SMUX_DIAG",
 		   .owner = THIS_MODULE,

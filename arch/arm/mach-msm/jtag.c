@@ -20,15 +20,10 @@
 #include <linux/printk.h>
 #include <linux/ratelimit.h>
 #include <linux/coresight.h>
-#include <asm/hardware/cp14.h>
 #include <mach/scm.h>
 #include <mach/jtag.h>
 
-/* DBGv7 with baseline CP14 registers implemented */
-#define ARM_DEBUG_ARCH_V7B	(0x3)
-/* DBGv7 with all CP14 registers implemented */
-#define ARM_DEBUG_ARCH_V7	(0x4)
-#define ARM_DEBUG_ARCH_V7p1	(0x5)
+#include "cp14.h"
 
 #define BM(lsb, msb)		((BIT(msb) - BIT(lsb)) + BIT(msb))
 #define BMVAL(val, lsb, msb)	((val & BM(lsb, msb)) >> lsb)
@@ -368,7 +363,7 @@ static int dbg_write_wxr(uint32_t *state, int i, int j)
 static inline bool dbg_arch_supported(uint8_t arch)
 {
 	switch (arch) {
-	case ARM_DEBUG_ARCH_V7p1:
+	case ARM_DEBUG_ARCH_V7_1:
 	case ARM_DEBUG_ARCH_V7:
 	case ARM_DEBUG_ARCH_V7B:
 		break;
@@ -386,7 +381,7 @@ static inline void dbg_save_state(int cpu)
 	i = cpu * MAX_DBG_REGS;
 
 	switch (dbg.arch) {
-	case ARM_DEBUG_ARCH_V7p1:
+	case ARM_DEBUG_ARCH_V7_1:
 		/* Set OS lock to inform the debugger that the OS is in the
 		 * process of saving debug registers. It prevents accidental
 		 * modification of the debug regs by the external debugger.
@@ -445,7 +440,7 @@ static inline void dbg_restore_state(int cpu)
 	i = cpu * MAX_DBG_REGS;
 
 	switch (dbg.arch) {
-	case ARM_DEBUG_ARCH_V7p1:
+	case ARM_DEBUG_ARCH_V7_1:
 		/* Clear the OS double lock */
 		isb();
 		dbg_write(0x0, DBGOSDLR);
@@ -1074,20 +1069,6 @@ void msm_jtag_restore_state(void)
 	int cpu;
 
 	cpu = raw_smp_processor_id();
-
-	/* Attempt restore only if save has been done. If power collapse
-	 * is disabled, hotplug off of non-boot core will result in WFI
-	 * and hence msm_jtag_save_state will not occur. Subsequently,
-	 * during hotplug on of non-boot core when msm_jtag_restore_state
-	 * is called via msm_platform_secondary_init, this check will help
-	 * bail us out without restoring.
-	 */
-	if (msm_jtag_save_cntr[cpu] == msm_jtag_restore_cntr[cpu])
-		return;
-	else if (msm_jtag_save_cntr[cpu] != msm_jtag_restore_cntr[cpu] + 1)
-		pr_err_ratelimited("jtag imbalance, save:%lu, restore:%lu\n",
-				   (unsigned long)msm_jtag_save_cntr[cpu],
-				   (unsigned long)msm_jtag_restore_cntr[cpu]);
 
 	msm_jtag_restore_cntr[cpu]++;
 	/* ensure counter is updated before moving forward */

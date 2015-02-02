@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,15 +11,15 @@
  *
  */
 
-#include <linux/leds.h>
 #include "msm_fb.h"
 #include "mipi_dsi.h"
 #include "mipi_NT35590.h"
 
+static struct msm_panel_common_pdata *mipi_nt35590_pdata;
 static struct dsi_buf nt35590_tx_buf;
 static struct dsi_buf nt35590_rx_buf;
 
-static int wled_trigger_initialized;
+static int mipi_nt35590_bl_ctrl;
 
 static char display_off[2] = {0x28, 0x00};
 static char enter_sleep[2] = {0x10, 0x00};
@@ -35,8 +35,6 @@ static char disp_on2[2] = {0x26, 0x00};
 static char disp_on3[2] = {0xFF, 0x00}; /* WaitTime(10) */
 
 static char lane[2] = {0xBA, 0x03}; /* MIPI 4 lane */
-/* Fix 180 degree orientation */
-/* static char disp_on_rotate[2] = {0x36, 0xd7}; */
 
 static char command_mode[2] = {0xC2, 0x08}; /* Setting 0x08 for MIPI cmd mode */
 
@@ -521,8 +519,6 @@ static struct dsi_cmd_desc nt35590_cmd_display_on_cmds[] = {
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on2), disp_on2},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 10, sizeof(disp_on3), disp_on3},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(lane), lane},
-	/*{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on_rotate),
-		 disp_on_rotate},*/
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(command_mode), command_mode},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on6), disp_on6},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on7), disp_on7},
@@ -990,8 +986,6 @@ static struct dsi_cmd_desc nt35590_video_display_on_cmds[] = {
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on2), disp_on2},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 10, sizeof(disp_on3), disp_on3},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(lane), lane},
-	/*{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on_rotate),
-		disp_on_rotate},*/
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(video_mode), video_mode},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on6), disp_on6},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(disp_on7), disp_on7},
@@ -1464,8 +1458,12 @@ static int mipi_nt35590_lcd_on(struct platform_device *pdev)
 	if (mfd->key != MFD_KEY)
 		return -EINVAL;
 
-	pr_err("%s: Enter\n", __func__);
 	mipi  = &mfd->panel_info.mipi;
+
+	if (!mfd->cont_splash_done) {
+		mfd->cont_splash_done = 1;
+		return 0;
+	}
 
 	if (mipi->mode == DSI_VIDEO_MODE) {
 		mipi_dsi_cmds_tx(&nt35590_tx_buf,
@@ -1476,7 +1474,6 @@ static int mipi_nt35590_lcd_on(struct platform_device *pdev)
 			nt35590_cmd_display_on_cmds,
 			ARRAY_SIZE(nt35590_cmd_display_on_cmds));
 	}
-	pr_err("%s: Exit\n", __func__);
 
 	return 0;
 }
@@ -1485,7 +1482,7 @@ static int mipi_nt35590_lcd_off(struct platform_device *pdev)
 {
 	struct msm_fb_data_type *mfd;
 
-	pr_err("mipi_nt35590_lcd_off E\n");
+	pr_debug("mipi_nt35590_lcd_off E\n");
 
 	mfd = platform_get_drvdata(pdev);
 
@@ -1497,33 +1494,82 @@ static int mipi_nt35590_lcd_off(struct platform_device *pdev)
 	mipi_dsi_cmds_tx(&nt35590_tx_buf, nt35590_display_off_cmds,
 			ARRAY_SIZE(nt35590_display_off_cmds));
 
-	pr_err("mipi_nt35590_lcd_off X\n");
+	pr_debug("mipi_nt35590_lcd_off X\n");
+	return 0;
+}
+
+static ssize_t mipi_nt35590_wta_bl_ctrl(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	ssize_t ret = strnlen(buf, PAGE_SIZE);
+	int err;
+
+	err =  kstrtoint(buf, 0, &mipi_nt35590_bl_ctrl);
+	if (err)
+		return ret;
+
+	pr_info("%s: bl ctrl set to %d\n", __func__, mipi_nt35590_bl_ctrl);
+
+	return ret;
+}
+
+static DEVICE_ATTR(bl_ctrl, S_IWUSR, NULL, mipi_nt35590_wta_bl_ctrl);
+
+static struct attribute *mipi_nt35590_fs_attrs[] = {
+	&dev_attr_bl_ctrl.attr,
+	NULL,
+};
+
+static struct attribute_group mipi_nt35590_fs_attr_group = {
+	.attrs = mipi_nt35590_fs_attrs,
+};
+
+static int mipi_nt35590_create_sysfs(struct platform_device *pdev)
+{
+	int rc;
+	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
+
+	if (!mfd) {
+		pr_err("%s: mfd not found\n", __func__);
+		return -ENODEV;
+	}
+	if (!mfd->fbi) {
+		pr_err("%s: mfd->fbi not found\n", __func__);
+		return -ENODEV;
+	}
+	if (!mfd->fbi->dev) {
+		pr_err("%s: mfd->fbi->dev not found\n", __func__);
+		return -ENODEV;
+	}
+	rc = sysfs_create_group(&mfd->fbi->dev->kobj,
+		&mipi_nt35590_fs_attr_group);
+	if (rc) {
+		pr_err("%s: sysfs group creation failed, rc=%d\n",
+			__func__, rc);
+		return rc;
+	}
+
 	return 0;
 }
 
 static int __devinit mipi_nt35590_lcd_probe(struct platform_device *pdev)
 {
 	struct platform_device *pthisdev = NULL;
-	struct msm_fb_data_type *mfd;
-	struct mipi_panel_info *mipi;
+	struct msm_fb_panel_data *pdata;
+	pr_debug("%s\n", __func__);
 
 	if (pdev->id == 0) {
-		/* No board specific panel data as of now */
+		mipi_nt35590_pdata = pdev->dev.platform_data;
+		if (mipi_nt35590_pdata->bl_lock)
+			spin_lock_init(&mipi_nt35590_pdata->bl_spinlock);
+		mipi_nt35590_bl_ctrl = 1;
 		return 0;
 	}
 
+	pdata = pdev->dev.platform_data;
+
 	pthisdev = msm_fb_add_device(pdev);
-	if (pthisdev) {
-		mfd = platform_get_drvdata(pthisdev);
-		if (!mfd)
-			return -ENODEV;
-		if (mfd->key != MFD_KEY)
-			return -EINVAL;
-
-		mipi  = &mfd->panel_info.mipi;
-
-		mipi->dlane_swap = 0;
-	}
+	mipi_nt35590_create_sysfs(pthisdev);
 
 	return 0;
 }
@@ -1535,12 +1581,42 @@ static struct platform_driver this_driver = {
 	},
 };
 
-DEFINE_LED_TRIGGER(bkl_led_trigger);
+static int old_bl_level;
+
 static void mipi_nt35590_set_backlight(struct msm_fb_data_type *mfd)
 {
-	if (wled_trigger_initialized)
-		led_trigger_event(bkl_led_trigger, mfd->bl_level);
-	return;
+	int bl_level;
+	unsigned long flags;
+	bl_level = mfd->bl_level;
+
+	if (mipi_nt35590_pdata->bl_lock) {
+		if (!mipi_nt35590_bl_ctrl) {
+			/* Level received is of range 1 to bl_max,
+			   We need to convert the levels to 1
+			   to 31 */
+			bl_level = (2 * bl_level * 31 + mfd->panel_info.bl_max)
+					/(2 * mfd->panel_info.bl_max);
+			if (bl_level == old_bl_level)
+				return;
+
+			if (bl_level == 0)
+				mipi_nt35590_pdata->backlight(0, 1);
+
+			if (old_bl_level == 0)
+				mipi_nt35590_pdata->backlight(50, 1);
+
+			spin_lock_irqsave(&mipi_nt35590_pdata->bl_spinlock,
+						flags);
+			mipi_nt35590_pdata->backlight(bl_level, 0);
+			spin_unlock_irqrestore(&mipi_nt35590_pdata->bl_spinlock,
+						flags);
+			old_bl_level = bl_level;
+		} else {
+			mipi_nt35590_pdata->backlight(bl_level, 1);
+		}
+	} else {
+		mipi_nt35590_pdata->backlight(bl_level, mipi_nt35590_bl_ctrl);
+	}
 }
 
 static struct msm_fb_panel_data nt35590_panel_data = {
@@ -1556,13 +1632,8 @@ static int mipi_nt35590_lcd_init(void)
 	mipi_dsi_buf_alloc(&nt35590_tx_buf, DSI_BUF_SIZE);
 	mipi_dsi_buf_alloc(&nt35590_rx_buf, DSI_BUF_SIZE);
 
-	led_trigger_register_simple("bkl_trigger", &bkl_led_trigger);
-	pr_info("%s: SUCCESS (WLED TRIGGER)\n", __func__);
-	wled_trigger_initialized = 1;
-
 	return platform_driver_register(&this_driver);
 }
-
 int mipi_nt35590_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel)
 {

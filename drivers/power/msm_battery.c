@@ -114,7 +114,7 @@ enum chg_type {
 };
 
 /*Maybe iT is not used in here*/
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 const int temp_table[][2] = {
 	/* ADC, Temperature (C) */
 	{813, -10},
@@ -237,14 +237,14 @@ const int temp_table[][2] = {
 #define BAT_USE_TIMER_EXPIRE			(10 * 60*HZ)
 
 
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 #define BATT_CHECK_INTERVAL			(10 * HZ)
 #else
 #define BATT_CHECK_INTERVAL			(30 * HZ)
 #endif
 #define TEMP_TABLE_OFFSET			30
 
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 #define BATT_TEMP_EVENT_BLOCK			60
 #define BATT_TEMP_HIGH_BLOCK			47
 #define BATT_TEMP_HIGH_RECOVER			43
@@ -269,7 +269,7 @@ const int temp_table[][2] = {
 
 #endif
 
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 #define USE_CALL			(0x1 << 0)
 #define USE_VIDEO			(0x1 << 1)
 #define USE_MUSIC			(0x1 << 2)
@@ -278,10 +278,10 @@ const int temp_table[][2] = {
 #define USE_CAMERA			(0x1 << 5)
 #define USE_DATA_CALL		(0x1 << 6)
 #define USE_GPS			(0x1 << 7)
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 
 
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 #define BATT_FULL_CHARGING_CURRENT	90
 #define BATT_FULL_CHARGING_VOLTAGE      4180
 #else
@@ -790,7 +790,7 @@ static struct device_attribute msm_battery_attrs[] = {
 	MSM_BATTERY_ATTR(talk_gsm),
 	/*MSM_BATTERY_ATTR(data_call),*/
 	MSM_BATTERY_ATTR(off_backlight),
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	MSM_BATTERY_ATTR(call),
 	MSM_BATTERY_ATTR(video),
 	MSM_BATTERY_ATTR(music),
@@ -800,7 +800,7 @@ static struct device_attribute msm_battery_attrs[] = {
 	MSM_BATTERY_ATTR(data_call),
 	MSM_BATTERY_ATTR(gps),
 	MSM_BATTERY_ATTR(batt_use),
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 
 };
 
@@ -834,7 +834,7 @@ enum {
 	TALK_GSM,
 	/*DATA_CALL,*/
 	OFF_BACKLIGHT,
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	BATT_USE_CALL,
 	BATT_USE_VIDEO,
 	BATT_USE_MUSIC,
@@ -844,7 +844,7 @@ enum {
 	BATT_USE_DATA_CALL,
 	BATT_USE_GPS,
 	BATT_USE,
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 	BATT_TEST_MODE,
 };
 
@@ -876,7 +876,7 @@ static void msm_batt_remove_attrs(struct device *dev)
 
 }
 
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 
 void msm_bat_use_timer_func(unsigned long param)
 {
@@ -958,7 +958,7 @@ void msm_bat_use_module(int module, int enable)
 
 	}
 }
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 
 
 static ssize_t msm_batt_show_property(struct device *dev,
@@ -1058,13 +1058,13 @@ static ssize_t msm_batt_show_property(struct device *dev,
 	case VT_CALL:
 	case TALK_WCDMA:
 	case TALK_GSM:
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			(msm_batt_info.batt_use & USE_CALL) ? 1 : 0);
 #else
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			msm_batt_info.talk_gsm);
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 		break;
 
 /*	case DATA_CALL:
@@ -1076,7 +1076,7 @@ static ssize_t msm_batt_show_property(struct device *dev,
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			msm_batt_info.off_backlight);
 		break;
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	case BATT_USE_CALL:
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			(msm_batt_info.batt_use & USE_CALL) ? 1 : 0);
@@ -1113,7 +1113,7 @@ static ssize_t msm_batt_show_property(struct device *dev,
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			msm_batt_info.batt_use);
 		break;
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 
 
 	default:
@@ -1194,7 +1194,7 @@ static ssize_t msm_batt_store_property(struct device *dev,
 			ret = count;
 		}
 		break;
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	case BATT_USE_CALL:
 		if (sscanf(buf, "%d\n", &x) == 1) {
 			/*during_call = x;*/
@@ -1244,7 +1244,7 @@ static ssize_t msm_batt_store_property(struct device *dev,
 			ret = count;
 		}
 		break;
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 	default:
 		return -EINVAL;
 	}	/* end of switch */
@@ -2107,7 +2107,7 @@ static int msm_batt_control_temperature(int temp_adc)
 		low_recover = BATT_TEMP_LOW_RECOVER;
 	}
 
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	if (msm_batt_info.batt_use && !charging_boot) {
 		pr_info("%s[BATT] set event block\n", __func__);
 		high_block = BATT_TEMP_EVENT_BLOCK;
@@ -2177,7 +2177,7 @@ static int msm_batt_control_temperature(int temp_adc)
 	if (temp_adc >= high_block) {
 		if (prev_health != POWER_SUPPLY_HEALTH_OVERHEAT)
 			new_health = POWER_SUPPLY_HEALTH_OVERHEAT;
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	} else if ((temp_adc <= high_block) && (temp_adc >= high_recover)
 			&& msm_batt_info.batt_use) {
 		if (prev_health == POWER_SUPPLY_HEALTH_OVERHEAT)
@@ -3376,9 +3376,9 @@ static int __devinit msm_batt_probe(struct platform_device *pdev)
 
 	setup_timer(&msm_batt_info.timer, batt_timeover, 0);
 	/*mod_timer(&msm_batt_info.timer, (jiffies + BATT_CHECK_INTERVAL));*/
-#ifdef CONFIG_MACH_TREBON
+#ifdef CONFIG_MACH_GEIM
 	setup_timer(&msm_batt_info.bat_use_timer, msm_bat_use_timer_func, 0);
-#endif /*CONFIG_MACH_TREBON*/
+#endif /*CONFIG_MACH_GEIM*/
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_wake_lock");
 	wake_lock_init(&fuel_alert_wake_lock,
 			WAKE_LOCK_SUSPEND, "fuel_alert_wake_lock");

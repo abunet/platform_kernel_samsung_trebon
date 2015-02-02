@@ -141,7 +141,7 @@ obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
 #MobiCore
 obj-$(CONFIG_MOBICORE_SUPPORT)  += gud/
 
-obj-$(CONFIG_CORESIGHT)		+= coresight/
+obj-$(CONFIG_MSM_QDSS)		+= coresight/
 
 obj-$(CONFIG_DPRAM)	+= 	dpram/
 obj-y				+= sensors/

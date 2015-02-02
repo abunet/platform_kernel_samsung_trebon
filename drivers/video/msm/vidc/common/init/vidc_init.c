@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -470,42 +470,6 @@ void vidc_cleanup_addr_table(struct video_client_ctx *client_ctx,
 			client_ctx->h264_mv_ion_handle = NULL;
 		}
 	}
-
-	if (client_ctx->vcd_meta_buffer.client_data)
-		msm_subsystem_unmap_buffer((struct msm_mapped_buffer *)
-		client_ctx->vcd_meta_buffer.client_data);
-	if (!IS_ERR_OR_NULL(client_ctx->meta_buffer_ion_handle)) {
-			ion_unmap_kernel(client_ctx->user_ion_client,
-				client_ctx->meta_buffer_ion_handle);
-		if (!res_trk_check_for_sec_session() &&
-		   (res_trk_get_core_type() != (u32)VCD_CORE_720P)) {
-			ion_unmap_iommu(client_ctx->user_ion_client,
-				client_ctx->meta_buffer_ion_handle,
-				VIDEO_DOMAIN,
-				VIDEO_MAIN_POOL);
-		}
-		ion_free(client_ctx->user_ion_client,
-			client_ctx->meta_buffer_ion_handle);
-		client_ctx->meta_buffer_ion_handle = NULL;
-	}
-
-	if (client_ctx->vcd_meta_buffer.client_data_iommu)
-		msm_subsystem_unmap_buffer((struct msm_mapped_buffer *)
-		client_ctx->vcd_meta_buffer.client_data_iommu);
-	if (!IS_ERR_OR_NULL(client_ctx->meta_buffer_iommu_ion_handle)) {
-		ion_unmap_kernel(client_ctx->user_ion_client,
-			client_ctx->meta_buffer_iommu_ion_handle);
-		if (res_trk_check_for_sec_session() &&
-		   (res_trk_get_core_type() != (u32)VCD_CORE_720P)) {
-			ion_unmap_iommu(client_ctx->user_ion_client,
-				client_ctx->meta_buffer_iommu_ion_handle,
-				VIDEO_DOMAIN,
-				VIDEO_MAIN_POOL);
-		}
-		ion_free(client_ctx->user_ion_client,
-			client_ctx->meta_buffer_iommu_ion_handle);
-		client_ctx->meta_buffer_iommu_ion_handle = NULL;
-	}
 bail_out_cleanup:
 	return;
 }
@@ -610,7 +574,6 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 	int ret = 0;
 	unsigned long buffer_size  = 0;
 	size_t ion_len;
-	unsigned long mapped_length = length;
 
 	if (!client_ctx || !length)
 		return false;
@@ -626,7 +589,7 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 		num_of_buffers = &client_ctx->num_of_output_buffers;
 		DBG("%s(): buffer = OUTPUT #Buf = %d\n",
 			__func__, *num_of_buffers);
-		mapped_length = length * 2; /* workaround for iommu video h/w bug */
+		length = length * 2; /* workaround for iommu video h/w bug */
 	}
 
 	if (*num_of_buffers == max_num_buffers) {
@@ -656,7 +619,7 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 			? MSM_SUBSYSTEM_MAP_IOVA :
 			MSM_SUBSYSTEM_MAP_IOVA|MSM_SUBSYSTEM_ALIGN_IOVA_8K;
 			mapped_buffer = msm_subsystem_map_buffer(phys_addr,
-			mapped_length, flags, vidc_mmu_subsystem,
+			length, flags, vidc_mmu_subsystem,
 			sizeof(vidc_mmu_subsystem)/sizeof(unsigned int));
 			if (IS_ERR(mapped_buffer)) {
 				pr_err("buffer map failed");
@@ -684,7 +647,8 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 			*kernel_vaddr = (unsigned long)
 				ion_map_kernel(
 				client_ctx->user_ion_client,
-				buff_ion_handle);
+				buff_ion_handle,
+				ionflag);
 			if (IS_ERR_OR_NULL((void *)*kernel_vaddr)) {
 				ERR("%s():ION virtual addr fail\n",
 				 __func__);
@@ -711,10 +675,11 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 						VIDEO_DOMAIN,
 						VIDEO_MAIN_POOL,
 						SZ_8K,
-						mapped_length,
+						length,
 						(unsigned long *) &iova,
 						(unsigned long *) &buffer_size,
-						0, 0);
+						UNCACHED,
+						ION_IOMMU_UNMAP_DELAYED);
 				if (ret || !iova) {
 					ERR(
 					"%s():ION iommu map fail, ret = %d, iova = 0x%lx\n",
@@ -734,7 +699,6 @@ u32 vidc_insert_addr_table(struct video_client_ctx *client_ctx,
 		buf_addr_table[*num_of_buffers].kernel_vaddr = *kernel_vaddr;
 		buf_addr_table[*num_of_buffers].pmem_fd = pmem_fd;
 		buf_addr_table[*num_of_buffers].file = file;
-		buf_addr_table[*num_of_buffers].buff_len = length;
 		buf_addr_table[*num_of_buffers].phy_addr = phys_addr;
 		buf_addr_table[*num_of_buffers].buff_ion_handle =
 						buff_ion_handle;
@@ -816,7 +780,6 @@ u32 vidc_insert_addr_table_kernel(struct video_client_ctx *client_ctx,
 		buf_addr_table[*num_of_buffers].kernel_vaddr = kernel_vaddr;
 		buf_addr_table[*num_of_buffers].pmem_fd = -1;
 		buf_addr_table[*num_of_buffers].file = NULL;
-		buf_addr_table[*num_of_buffers].buff_len = length;
 		buf_addr_table[*num_of_buffers].phy_addr = phys_addr;
 		buf_addr_table[*num_of_buffers].buff_ion_handle = NULL;
 		*num_of_buffers = *num_of_buffers + 1;
@@ -901,8 +864,6 @@ u32 vidc_delete_addr_table(struct video_client_ctx *client_ctx,
 			buf_addr_table[*num_of_buffers - 1].pmem_fd;
 		buf_addr_table[i].file =
 			buf_addr_table[*num_of_buffers - 1].file;
-		buf_addr_table[i].buff_len =
-			buf_addr_table[*num_of_buffers - 1].buff_len;
 		buf_addr_table[i].buff_ion_handle =
 			buf_addr_table[*num_of_buffers - 1].buff_ion_handle;
 	}

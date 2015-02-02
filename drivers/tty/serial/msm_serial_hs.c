@@ -3,7 +3,7 @@
  * MSM 7k High speed uart driver
  *
  * Copyright (c) 2008 Google Inc.
- * Copyright (c) 2007-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2012, The Linux Foundation. All rights reserved.
  * Modified: Nick Pelly <npelly@google.com>
  *
  * All source code in this file is licensed under the following license
@@ -55,7 +55,6 @@
 #include <linux/device.h>
 #include <linux/wakelock.h>
 #include <linux/debugfs.h>
-#include <linux/gpio.h>
 #include <asm/atomic.h>
 #include <asm/irq.h>
 
@@ -145,15 +144,6 @@ struct msm_hs_wakeup {
 	char rx_to_inject;
 };
 
-/*
- * UART can be used in 2-wire or 4-wire mode.
- * Use uart_func_mode to set 2-wire or 4-wire mode.
- */
-enum uart_func_mode {
-	UART_TWO_WIRE, /* can't support HW Flow control. */
-	UART_FOUR_WIRE,/* can support HW Flow control. */
-};
-
 struct msm_hs_port {
 	struct uart_port uport;
 	unsigned int imr_reg;  /* shadow value of UARTDM_IMR */
@@ -183,7 +173,6 @@ struct msm_hs_port {
 	struct mutex clk_mutex; /* mutex to guard against clock off/clock on */
 	bool tty_flush_receive;
 	bool rx_discard_flush_issued;
-	enum uart_func_mode func_mode;
 	bool is_shutdown;
 	bool termios_in_progress;
 };
@@ -192,7 +181,7 @@ struct msm_hs_port {
 #define UARTDM_TX_BUF_SIZE UART_XMIT_SIZE
 #define UARTDM_RX_BUF_SIZE 512
 #define RETRY_TIMEOUT 5
-#define UARTDM_NR 256
+#define UARTDM_NR 2
 #define RX_FLUSH_COMPLETE_TIMEOUT 300 /* In jiffies */
 
 static struct dentry *debug_base;
@@ -483,133 +472,6 @@ static int __devexit msm_hs_remove(struct platform_device *pdev)
 	return 0;
 }
 
-/**
- * msm_hs_config_uart_tx_rx_gpios - Configures UART Tx and RX GPIOs
- * @port: uart port
- */
-static int msm_hs_config_uart_tx_rx_gpios(struct uart_port *uport)
-{
-	struct platform_device *pdev = to_platform_device(uport->dev);
-	const struct msm_serial_hs_platform_data *pdata =
-					pdev->dev.platform_data;
-	int ret = -EINVAL;
-
-
-	ret = gpio_request(pdata->uart_tx_gpio, "UART_TX_GPIO");
-	if (unlikely(ret)) {
-		pr_err("gpio request failed for:%d\n",
-				pdata->uart_tx_gpio);
-		goto exit_uart_config;
-	}
-
-	ret = gpio_request(pdata->uart_rx_gpio, "UART_RX_GPIO");
-	if (unlikely(ret)) {
-		pr_err("gpio request failed for:%d\n",
-				pdata->uart_rx_gpio);
-		gpio_free(pdata->uart_tx_gpio);
-		goto exit_uart_config;
-	}
-
-exit_uart_config:
-	return ret;
-}
-
-/**
- * msm_hs_unconfig_uart_tx_rx_gpios: Unconfigures UART Tx and RX GPIOs
- * @port: uart port
- */
-static void msm_hs_unconfig_uart_tx_rx_gpios(struct uart_port *uport)
-{
-	struct platform_device *pdev = to_platform_device(uport->dev);
-	const struct msm_serial_hs_platform_data *pdata =
-						pdev->dev.platform_data;
-
-
-	gpio_free(pdata->uart_tx_gpio);
-	gpio_free(pdata->uart_rx_gpio);
-
-}
-
-/**
- * msm_hs_config_uart_hwflow_gpios: Configures UART HWFlow GPIOs
- * @port: uart port
- */
-static int msm_hs_config_uart_hwflow_gpios(struct uart_port *uport)
-{
-	struct platform_device *pdev = to_platform_device(uport->dev);
-	const struct msm_serial_hs_platform_data *pdata =
-						pdev->dev.platform_data;
-	int ret = -EINVAL;
-
-	ret = gpio_request(pdata->uart_cts_gpio, "UART_CTS_GPIO");
-	if (unlikely(ret)) {
-		pr_err("gpio request failed for:%d\n", pdata->uart_cts_gpio);
-		goto exit_config_uart;
-	}
-
-	ret = gpio_request(pdata->uart_rfr_gpio, "UART_RFR_GPIO");
-	if (unlikely(ret)) {
-		pr_err("gpio request failed for:%d\n", pdata->uart_rfr_gpio);
-		gpio_free(pdata->uart_cts_gpio);
-		goto exit_config_uart;
-	}
-
-exit_config_uart:
-	return ret;
-}
-
-/**
- * msm_hs_unconfig_uart_hwflow_gpios: Unonfigures UART HWFlow GPIOs
- * @port: uart port
- */
-static void msm_hs_unconfig_uart_hwflow_gpios(struct uart_port *uport)
-{
-	struct platform_device *pdev = to_platform_device(uport->dev);
-	const struct msm_serial_hs_platform_data *pdata =
-						pdev->dev.platform_data;
-
-	gpio_free(pdata->uart_cts_gpio);
-	gpio_free(pdata->uart_rfr_gpio);
-
-}
-
-/**
- * msm_hs_config_uart_gpios: Configures UART GPIOs and returns success or
- * Failure
- * @port: uart port
- */
-static int msm_hs_config_uart_gpios(struct uart_port *uport)
-{
-	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
-	int ret;
-
-	/* Configure UART Tx and Rx GPIOs */
-	ret = msm_hs_config_uart_tx_rx_gpios(uport);
-	if (!ret) {
-		if (msm_uport->func_mode == UART_FOUR_WIRE) {
-			/*if 4-wire uart, configure CTS and RFR GPIOs */
-			ret = msm_hs_config_uart_hwflow_gpios(uport);
-			if (ret)
-				msm_hs_unconfig_uart_tx_rx_gpios(uport);
-		}
-	}
-
-	return ret;
-}
-
-/**
- * msm_hs_unconfig_uart_gpios: Unconfigures UART GPIOs
- * @port: uart port
- */
-static void msm_hs_unconfig_uart_gpios(struct uart_port *port)
-{
-	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(port);
-
-	msm_hs_unconfig_uart_tx_rx_gpios(port);
-	if (msm_uport->func_mode == UART_FOUR_WIRE)
-		msm_hs_unconfig_uart_hwflow_gpios(port);
-}
-
 static int msm_hs_init_clk(struct uart_port *uport)
 {
 	int ret;
@@ -650,9 +512,8 @@ static int msm_hs_init_clk(struct uart_port *uport)
  * Goal is to have around 8 ms before indicate stale.
  * roundup (((Bit Rate * .008) / 10) + 1
  */
-static unsigned long msm_hs_set_bps_locked(struct uart_port *uport,
-			       unsigned int bps,
-				unsigned long flags)
+static void msm_hs_set_bps_locked(struct uart_port *uport,
+			       unsigned int bps)
 {
 	unsigned long rxstale;
 	unsigned long data;
@@ -754,24 +615,18 @@ static unsigned long msm_hs_set_bps_locked(struct uart_port *uport,
 		uport->uartclk = 7372800;
 	}
 
-	spin_unlock_irqrestore(&uport->lock, flags);
-
 	if (curr_uartclk != uport->uartclk) {
 		if (clk_set_rate(msm_uport->clk, uport->uartclk)) {
 			pr_err("%s(): Error setting clock rate on UART\n",
 								__func__);
 			WARN_ON(1);
-			spin_lock_irqsave(&uport->lock, flags);
-			return flags;
 		}
 	}
 
-	spin_lock_irqsave(&uport->lock, flags);
 	data = rxstale & UARTDM_IPR_STALE_LSB_BMSK;
 	data |= UARTDM_IPR_STALE_TIMEOUT_MSB_BMSK & (rxstale << 2);
 
 	msm_hs_write(uport, UARTDM_IPR_ADDR, data);
-	return flags;
 }
 
 
@@ -911,7 +766,7 @@ static void msm_hs_set_termios(struct uart_port *uport,
 	if (!uport->uartclk)
 		msm_hs_set_std_bps_locked(uport, bps);
 	else
-		flags = msm_hs_set_bps_locked(uport, bps, flags);
+		msm_hs_set_bps_locked(uport, bps);
 
 	data = msm_hs_read(uport, UARTDM_MR2_ADDR);
 	data &= ~UARTDM_MR2_PARITY_MODE_BMSK;
@@ -1314,26 +1169,12 @@ static void msm_serial_hs_rx_tlet(unsigned long tlet_ptr)
 
 	if (unlikely(status & UARTDM_SR_PAR_FRAME_BMSK)) {
 		/* Can not tell difference between parity & frame error */
-		if (hs_serial_debug_mask)
-			printk(KERN_WARNING "msm_serial_hs: parity error\n");
 		uport->icount.parity++;
 		error_f = 1;
-		if (!(uport->ignore_status_mask & IGNPAR)) {
+		if (uport->ignore_status_mask & IGNPAR) {
 			retval = tty_insert_flip_char(tty, 0, TTY_PARITY);
 			if (!retval)
 				msm_uport->rx.buffer_pending |= TTY_PARITY;
-		}
-	}
-
-	if (unlikely(status & UARTDM_SR_RX_BREAK_BMSK)) {
-		if (hs_serial_debug_mask)
-			printk(KERN_WARNING "msm_serial_hs: Rx break\n");
-		uport->icount.brk++;
-		error_f = 1;
-		if (!(uport->ignore_status_mask & IGNBRK)) {
-			retval = tty_insert_flip_char(tty, 0, TTY_BREAK);
-			if (!retval)
-				msm_uport->rx.buffer_pending |= TTY_BREAK;
 		}
 	}
 
@@ -2046,13 +1887,9 @@ static int msm_hs_startup(struct uart_port *uport)
 		return ret;
 	}
 
-	if (pdata && pdata->config_gpio) {
-		ret = msm_hs_config_uart_gpios(uport);
-		if (ret)
-			goto deinit_uart_clk;
-	} else {
-		pr_debug("%s(): UART GPIOs not specified.\n", __func__);
-	}
+	if (pdata && pdata->gpio_config)
+		if (unlikely(pdata->gpio_config(1)))
+			dev_err(uport->dev, "Cannot configure gpios\n");
 
 	/* Set auto RFR Level */
 	data = msm_hs_read(uport, UARTDM_MR1_ADDR);
@@ -2127,7 +1964,7 @@ static int msm_hs_startup(struct uart_port *uport)
 		ret = irq_set_irq_wake(msm_uport->wakeup.irq, 1);
 		if (unlikely(ret)) {
 			pr_err("%s():Err setting wakeup irq\n", __func__);
-			goto unconfigure_uart_gpio;
+			goto deinit_uart_clk;
 		}
 	}
 
@@ -2156,9 +1993,7 @@ static int msm_hs_startup(struct uart_port *uport)
 	msm_hs_start_rx_locked(uport);
 
 	spin_unlock_irqrestore(&uport->lock, flags);
-	ret = pm_runtime_set_active(uport->dev);
-	if (ret)
-		dev_err(uport->dev, "set active error:%d\n", ret);
+
 	pm_runtime_enable(uport->dev);
 
 	return 0;
@@ -2167,9 +2002,6 @@ free_uart_irq:
 	free_irq(uport->irq, msm_uport);
 free_wake_irq:
 	irq_set_irq_wake(msm_uport->wakeup.irq, 0);
-unconfigure_uart_gpio:
-	if (pdata && pdata->config_gpio)
-		msm_hs_unconfig_uart_gpios(uport);
 deinit_uart_clk:
 	clk_disable_unprepare(msm_uport->clk);
 	if (msm_uport->pclk)
@@ -2348,38 +2180,6 @@ static int __devinit msm_hs_probe(struct platform_device *pdev)
 
 	}
 
-	/* Identify UART functional mode as 2-wire or 4-wire. */
-	if (pdata && pdata->config_gpio) {
-		switch (pdata->config_gpio) {
-		case 4:
-			if (gpio_is_valid(pdata->uart_tx_gpio)
-				&& gpio_is_valid(pdata->uart_rx_gpio)
-				&& gpio_is_valid(pdata->uart_cts_gpio)
-				&& gpio_is_valid(pdata->uart_rfr_gpio)) {
-					msm_uport->func_mode = UART_FOUR_WIRE;
-			} else {
-				pr_err("%s(): Wrong GPIO Number for 4-Wire.\n",
-								__func__);
-				return -EINVAL;
-			}
-			break;
-		case 2:
-			if (gpio_is_valid(pdata->uart_tx_gpio)
-				&& gpio_is_valid(pdata->uart_rx_gpio)) {
-					msm_uport->func_mode = UART_TWO_WIRE;
-			} else {
-				pr_err("%s(): Wrong GPIO Number for 2-Wire.\n",
-								__func__);
-				return -EINVAL;
-			}
-			break;
-		default:
-			pr_err("%s(): Invalid number of GPIOs.\n", __func__);
-			pdata->config_gpio = 0;
-			return -EINVAL;
-		}
-	}
-
 	resource = platform_get_resource_byname(pdev, IORESOURCE_DMA,
 						"uartdm_channels");
 	if (unlikely(!resource))
@@ -2469,8 +2269,6 @@ static int __devinit msm_hs_probe(struct platform_device *pdev)
 	msm_serial_debugfs_init(msm_uport, pdev->id);
 
 	uport->line = pdev->id;
-	if (pdata != NULL && pdata->userid && pdata->userid <= UARTDM_NR)
-		uport->line = pdata->userid;
 	return uart_add_one_port(&msm_hs_driver, uport);
 }
 
@@ -2587,7 +2385,6 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	cancel_delayed_work_sync(&msm_uport->rx.flip_insert_work);
 	flush_workqueue(msm_uport->hsuart_wq);
 	pm_runtime_disable(uport->dev);
-	pm_runtime_set_suspended(uport->dev);
 
 	/* Disable the transmitter */
 	msm_hs_write(uport, UARTDM_CR_ADDR, UARTDM_CR_TX_DISABLE_BMSK);
@@ -2619,8 +2416,9 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	if (use_low_power_wakeup(msm_uport))
 		free_irq(msm_uport->wakeup.irq, msm_uport);
 
-	if (pdata && pdata->config_gpio)
-			msm_hs_unconfig_uart_gpios(uport);
+	if (pdata && pdata->gpio_config)
+		if (pdata->gpio_config(0))
+			dev_err(uport->dev, "GPIO config error\n");
 }
 
 static void __exit msm_serial_hs_exit(void)

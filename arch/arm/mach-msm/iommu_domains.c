@@ -15,8 +15,10 @@
 #include <linux/iommu.h>
 #include <linux/memory_alloc.h>
 #include <linux/platform_device.h>
+#include <linux/vmalloc.h>
 #include <linux/rbtree.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <asm/sizes.h>
 #include <asm/page.h>
 #include <mach/iommu.h>
@@ -59,7 +61,7 @@ int msm_iommu_map_extra(struct iommu_domain *domain,
 		unsigned int nrpages = PFN_ALIGN(size) >> PAGE_SHIFT;
 		struct page *dummy_page = phys_to_page(phy_addr);
 
-		sglist = kmalloc(sizeof(*sglist) * nrpages, GFP_KERNEL);
+		sglist = vmalloc(sizeof(*sglist) * nrpages);
 		if (!sglist) {
 			ret = -ENOMEM;
 			goto out;
@@ -76,7 +78,7 @@ int msm_iommu_map_extra(struct iommu_domain *domain,
 				__func__, start_iova, domain);
 		}
 
-		kfree(sglist);
+		vfree(sglist);
 	} else {
 		unsigned long order = get_order(page_size);
 		unsigned long aligned_size = ALIGN(size, page_size);
@@ -131,7 +133,7 @@ static int msm_iommu_map_iova_phys(struct iommu_domain *domain,
 	int prot = IOMMU_WRITE | IOMMU_READ;
 	prot |= cached ? IOMMU_CACHE : 0;
 
-	sglist = kmalloc(sizeof(*sglist), GFP_KERNEL);
+	sglist = vmalloc(sizeof(*sglist));
 	if (!sglist) {
 		ret = -ENOMEM;
 		goto err1;
@@ -148,7 +150,7 @@ static int msm_iommu_map_iova_phys(struct iommu_domain *domain,
 			__func__, iova, domain);
 	}
 
-	kfree(sglist);
+	vfree(sglist);
 err1:
 	return ret;
 
@@ -189,7 +191,6 @@ int msm_iommu_map_contig_buffer(unsigned long phys,
 
 	return ret;
 }
-EXPORT_SYMBOL(msm_iommu_map_contig_buffer);
 
 void msm_iommu_unmap_contig_buffer(unsigned long iova,
 					unsigned int domain_no,
@@ -202,7 +203,6 @@ void msm_iommu_unmap_contig_buffer(unsigned long iova,
 	iommu_unmap_range(msm_get_iommu_domain(domain_no), iova, size);
 	msm_free_iova_address(iova, domain_no, partition_no, size);
 }
-EXPORT_SYMBOL(msm_iommu_unmap_contig_buffer);
 
 static struct msm_iova_data *find_domain(int domain_num)
 {
@@ -402,7 +402,6 @@ out:
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL(msm_register_domain);
 
 static int __init iommu_domain_probe(struct platform_device *pdev)
 {

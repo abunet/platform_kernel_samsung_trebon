@@ -183,7 +183,6 @@ struct sps_mem_stats {
 #ifdef CONFIG_DEBUG_FS
 /* record debug info for debugfs */
 void sps_debugfs_record(const char *);
-#endif
 
 /* output the content of BAM-level registers */
 void print_bam_reg(void *);
@@ -198,10 +197,8 @@ void print_bam_selected_reg(void *);
 void print_bam_pipe_selected_reg(void *, u32);
 
 /* output descriptor FIFO of a pipe */
-void print_bam_pipe_desc_fifo(void *, u32, u32);
-
-/* output BAM_TEST_BUS_REG */
-void print_bam_test_bus_reg(void *, u32);
+void print_bam_pipe_desc_fifo(void *, u32);
+#endif
 
 /**
  * Translate physical to virtual address

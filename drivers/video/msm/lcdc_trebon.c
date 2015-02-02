@@ -19,7 +19,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/lcd.h>
-#include <asm/gpio.h>
+#include <linux/gpio.h>
 #include <mach/pmic.h>
 #include <mach/vreg.h>
 #include "msm_fb.h"

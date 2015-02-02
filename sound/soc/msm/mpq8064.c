@@ -133,8 +133,8 @@ static int msm_ext_bottom_spk_pamp;
 static int msm_ext_top_spk_pamp;
 static int msm_slim_0_rx_ch = 1;
 static int msm_slim_0_tx_ch = 1;
-static int msm_hdmi_rx_ch = 8;
-static int hdmi_rate_variable;
+static int msm_hdmi_rx_ch = 2;
+
 static struct clk *codec_clk;
 static int clk_users;
 
@@ -515,17 +515,14 @@ static const struct snd_soc_dapm_route common_audio_map[] = {
 static const char *spk_function[] = {"Off", "On"};
 static const char *slim0_rx_ch_text[] = {"One", "Two"};
 static const char *slim0_tx_ch_text[] = {"One", "Two", "Three", "Four"};
-static const char * const hdmi_rx_ch_text[] = {"Two", "Three", "Four",
-					"Five", "Six", "Seven", "Eight"};
-static const char * const hdmi_rate[] = {"Default", "Variable"};
+static const char *hdmi_rx_ch_text[] = {"Two", "Three", "Four", "Five", "Six"};
 
 
 static const struct soc_enum msm_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, spk_function),
 	SOC_ENUM_SINGLE_EXT(2, slim0_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(4, slim0_tx_ch_text),
-	SOC_ENUM_SINGLE_EXT(7, hdmi_rx_ch_text),
-	SOC_ENUM_SINGLE_EXT(2, hdmi_rate),
+	SOC_ENUM_SINGLE_EXT(5, hdmi_rx_ch_text),
 
 };
 
@@ -587,21 +584,6 @@ static int msm_hdmi_rx_ch_put(struct snd_kcontrol *kcontrol,
 }
 
 
-static int msm_hdmi_rate_put(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	hdmi_rate_variable = ucontrol->value.integer.value[0];
-	pr_debug("%s: hdmi_rate_variable = %d\n", __func__, hdmi_rate_variable);
-	return 0;
-}
-
-static int msm_hdmi_rate_get(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = hdmi_rate_variable;
-	return 0;
-}
-
 static const struct snd_kcontrol_new tabla_msm_controls[] = {
 	SOC_ENUM_EXT("Speaker Function", msm_enum[0], msm_get_spk,
 		msm_set_spk),
@@ -611,9 +593,7 @@ static const struct snd_kcontrol_new tabla_msm_controls[] = {
 		msm_slim_0_tx_ch_get, msm_slim_0_tx_ch_put),
 	SOC_ENUM_EXT("HDMI_RX Channels", msm_enum[3],
 		msm_hdmi_rx_ch_get, msm_hdmi_rx_ch_put),
-	SOC_ENUM_EXT("HDMI RX Rate", msm_enum[4],
-					msm_hdmi_rate_get,
-					msm_hdmi_rate_put),
+
 };
 
 static void *def_tabla_mbhc_cal(void)
@@ -829,22 +809,6 @@ static int msm_slim_0_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 
-static int msm_be_i2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
-			struct snd_pcm_hw_params *params)
-{
-	struct snd_interval *rate = hw_param_interval(params,
-					SNDRV_PCM_HW_PARAM_RATE);
-
-	struct snd_interval *channels = hw_param_interval(params,
-					SNDRV_PCM_HW_PARAM_CHANNELS);
-
-	pr_debug("%s()\n", __func__);
-	rate->min = rate->max = 48000;
-	channels->min =  channels->max = 2;
-
-	return 0;
-}
-
 static int msm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 			struct snd_pcm_hw_params *params)
 {
@@ -869,9 +833,7 @@ static int msm_hdmi_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	pr_debug("%s channels->min %u channels->max %u ()\n", __func__,
 			channels->min, channels->max);
 
-	/*Configure the sample rate as 48000 KHz for the LPCM playback*/
-	if (!hdmi_rate_variable)
-		rate->min = rate->max = 48000;
+	rate->min = rate->max = 48000;
 	channels->min =  channels->max = msm_hdmi_rx_ch;
 
 	return 0;
@@ -1203,6 +1165,8 @@ static struct snd_soc_dai_link msm_dai[] = {
 		.platform_name  = "msm-pcm-afe",
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1, /* this dainlink has playback support */
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
 	},
 	{
 		.name = "MSM AFE-PCM TX",
@@ -1212,6 +1176,8 @@ static struct snd_soc_dai_link msm_dai[] = {
 		.codec_dai_name = "msm-stub-tx",
 		.platform_name  = "msm-pcm-afe",
 		.ignore_suspend = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
 	},
 	{
 		.name = "MSM8960 Compr1",
@@ -1377,7 +1343,7 @@ static struct snd_soc_dai_link msm_dai[] = {
 		.codec_dai_name = "spdif_rx",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_SEC_I2S_RX,
-		.be_hw_params_fixup = msm_be_i2s_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ops = &mpq8064_sec_i2s_rx_be_ops,
 		.ignore_pmdown_time = 1, /* this dainlink has playback support */
 	},
@@ -1523,9 +1489,6 @@ static int __init msm_audio_init(void)
 		pr_err("%s: Not the right machine type\n", __func__);
 		return -ENODEV;
 	}
-
-	if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
-		bottom_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(16);
 
 	mbhc_cfg.calibration = def_tabla_mbhc_cal();
 	if (!mbhc_cfg.calibration) {

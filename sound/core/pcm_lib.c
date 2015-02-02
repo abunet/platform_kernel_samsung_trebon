@@ -1669,11 +1669,6 @@ static int snd_pcm_lib_ioctl_channel_info(struct snd_pcm_substream *substream,
 	switch (runtime->access) {
 	case SNDRV_PCM_ACCESS_MMAP_INTERLEAVED:
 	case SNDRV_PCM_ACCESS_RW_INTERLEAVED:
-		if ((UINT_MAX/width) < info->channel) {
-			snd_printd("%s: integer overflow while multiply\n",
-				   __func__);
-			return -EINVAL;
-		}
 		info->first = info->channel * width;
 		info->step = runtime->channels * width;
 		break;
@@ -1681,11 +1676,6 @@ static int snd_pcm_lib_ioctl_channel_info(struct snd_pcm_substream *substream,
 	case SNDRV_PCM_ACCESS_RW_NONINTERLEAVED:
 	{
 		size_t size = runtime->dma_bytes / runtime->channels;
-		if ((size > 0) && ((UINT_MAX/(size * 8)) < info->channel)) {
-			snd_printd("%s: integer overflow while multiply\n",
-				   __func__);
-			return -EINVAL;
-		}
 		info->first = info->channel * size * 8;
 		info->step = width;
 		break;
@@ -1702,14 +1692,16 @@ static int snd_pcm_lib_ioctl_fifo_size(struct snd_pcm_substream *substream,
 {
 	struct snd_pcm_hw_params *params = arg;
 	snd_pcm_format_t format;
-	int channels, width;
+	int channels;
+	ssize_t frame_size;
 
 	params->fifo_size = substream->runtime->hw.fifo_size;
 	if (!(substream->runtime->hw.info & SNDRV_PCM_INFO_FIFO_IN_FRAMES)) {
 		format = params_format(params);
 		channels = params_channels(params);
-		width = snd_pcm_format_physical_width(format);
-		params->fifo_size /= width * channels;
+		frame_size = snd_pcm_format_size(format, channels);
+		if (frame_size > 0)
+			params->fifo_size /= (unsigned)frame_size;
 	}
 	return 0;
 }
