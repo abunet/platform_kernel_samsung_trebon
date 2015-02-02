@@ -61,7 +61,7 @@
 #define REGS_CYCLE		0x3 /* Write Only */
 #define REGS_OPMOD		0x4 /* Write Only */
 #define REGS_CON		0x6 /* Write Only */
-#if defined(CONFIG_MACH_GEIM) defined(CONFIG_MACH_TREBON)
+#if defined(CONFIG_MACH_TREBON)
 #define PROX_NONDETECT	0x40
 #define PROX_DETECT		0x20
 #else
@@ -239,7 +239,7 @@ static ssize_t proximity_enable_store(struct device *dev,
 		value = 0x04;
 		gp2a_i2c_write(gp2a, REGS_CYCLE, &value);
 
-		#if defined(CONFIG_MACH_GEIM) defined(CONFIG_MACH_TREBON)
+		#if defined(CONFIG_MACH_TREBON)
 			enable_irq_wake(gp2a->irq);
 		#else
 			enable_irq_wake(gp2a->irq);
@@ -252,7 +252,7 @@ static ssize_t proximity_enable_store(struct device *dev,
 
 	} else if (!new_value && (gp2a->power_state & PROXIMITY_ENABLED)) {
 		pr_info("[TMP] %s, %d\n", __func__, __LINE__);
-		#if defined(CONFIG_MACH_GEIM) defined(CONFIG_MACH_TREBON)
+		#if defined(CONFIG_MACH_TREBON)
 			disable_irq_wake(gp2a->irq);
 		#else
 			disable_irq_wake(gp2a->irq);
@@ -291,7 +291,7 @@ static void gp2a_prox_work_func(struct work_struct *work)
 		struct gp2a_data, work_prox);
 	u8 vo, value;
 	if (gp2a->irq != 0) {
-		#if defined(CONFIG_MACH_GEIM) defined(CONFIG_MACH_TREBON)
+		#if defined(CONFIG_MACH_TREBON)
 			disable_irq_wake(gp2a->irq);
 		#else
 			disable_irq_wake(gp2a->irq);
@@ -329,7 +329,7 @@ static void gp2a_prox_work_func(struct work_struct *work)
 	gp2a_i2c_write(gp2a, REGS_CON, &value);
 	if (gp2a->irq != 0) {
 		enable_irq(gp2a->irq);
-		#if defined(CONFIG_MACH_GEIM) defined(CONFIG_MACH_TREBON)
+		#if defined(CONFIG_MACH_TREBON)
 			enable_irq_wake(gp2a->irq);
 		#else
 			enable_irq_wake(gp2a->irq);
