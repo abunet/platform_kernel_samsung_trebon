@@ -428,7 +428,7 @@ static int gp2a_i2c_probe(struct i2c_client *client,
 	struct gp2a_platform_data *pdata = client->dev.platform_data;
 	pr_info("[TMP] %s, %d\n", __func__, __LINE__);
 
-#if defined(CONFIG_MACH_GEIM) defined(CONFIG_MACH_TREBON)
+#if defined(CONFIG_MACH_TREBON)
 	nondetect = PROX_NONDETECT;
 	detect = PROX_DETECT;
 #else
