@@ -32,7 +32,7 @@
 #define CAMDRV_DEBUG(fmt, arg...)
 #endif
 
-#if (CONFIG_MACH_TREBON_HWREV == 0x0) || (CONFIG_MACH_GEIM_HWREV == 0x0)
+#if (CONFIG_MACH_TREBON_HWREV == 0x0) 
 #define	CAM_C_EN		107
 #define	CAM_VGA_RST	98
 #define	CAM_VGA_STBY	18

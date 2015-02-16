@@ -73,7 +73,7 @@
 
 /* yjh_flash*/
 #define CAM_FLASH_ENSET 84
-#if (CONFIG_MACH_TREBON_HWREV == 0x0) || (CONFIG_MACH_GEIM_HWREV == 0x0)
+#if (CONFIG_MACH_TREBON_HWREV == 0x0) 
 #define CAM_FLASH_FLEN 58
 #else
 #define CAM_FLASH_FLEN 92
