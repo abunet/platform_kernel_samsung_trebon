@@ -1,7 +1,7 @@
-/* JENA GPIOS */
+/* TREBON GPIOS */
 
-#ifndef __GPIO_JENA_H_
-#define __GPIO_JENA_H_
+#ifndef __GPIO_TREBON_H_
+#define __GPIO_TREBON_H_
 
 #define GPIO_LCD_MCLK			4
 #define GPIO_LCD_R_7			5
@@ -19,11 +19,11 @@
 							/* 17 */
 #define GPIO_SENSOR_SCL 		16
 #define GPIO_SENSOR_SDA			17
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_ON_SW				18
 #endif
 							/* 19 */
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_SENSOR_RDY			20
 #endif
 
@@ -45,7 +45,7 @@
 #define GPIO_KBR_1				36
 #define GPIO_KBR_2				37
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_KBR_3				38
 #define GPIO_KBR_0				39
 #else
@@ -88,7 +88,7 @@
 #define GPIO_ANT_SEL_2			73
 #define GPIO_ANT_SEL_1			74
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_ANT_SEL_0			75
 #define GPIO_LCD_BL_CTRL		76
 							/* 77 */
@@ -104,14 +104,14 @@
 							/* 82 */
 #define GPIO_FM_RDS_INT			83
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_SIM2_CLK_MSM		84
 #endif
 
 #define GPIO_3M_CAM_RESET		85
 							/* 86 */
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_SIM2_DATA_MSM		87
 #define GPIO_EAR_SEL			88
 #else
@@ -122,14 +122,14 @@
 #define GPIO_MUS_SCL			123
 #define GPIO_MUS_SDA			122
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_EAR_SWITCH			92
 							/* 93 */
 #endif
 
 #define GPIO_nTF_DETECT			94
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_REG_MSMP_1_8V		95
 #endif
 
@@ -137,7 +137,7 @@
 #define GPIO_UART_BOOT_ON		97
 							/* 98 */
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 							/* 107 */
 #else
 #define GPIO_WLAN_18V_EN		107
@@ -145,7 +145,7 @@
 
 #define GPIO_PHONE_TXD			108
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 							/* 109 */
 #else
 #define GPIO_WLAN_33V_EN		109
@@ -165,7 +165,7 @@
 #define GPIO_LCDE_G_2			121
 							/* 122 */
 
-#ifdef	CONFIG_JENA_REV00
+#ifdef	CONFIG_TREBON_REV00
 #define GPIO_CAM_AVDD_EN		123
 #define GPIO_CAN_VDDIO_EN		124
 #endif
@@ -179,4 +179,4 @@
 #define GPIO_I2C_SCL			131
 #define GPIO_I2C_SDA			132
 
-#endif	/* __GPIO_JENA_H_ */
+#endif	/* __GPIO_TREBON_H_ */

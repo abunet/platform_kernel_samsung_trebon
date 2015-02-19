@@ -69,8 +69,7 @@
 #define CONFIG_MSM_CAMERA
 #endif
 
-#define _CONFIG_MACH_JENA // Temporary flag
-#define _CONFIG_MACH_TREBON // Temporary flag
+#define _CONFIG_MACH_TREBON
 #define ADSP_RPC_PROG           0x3000000a
 
 #define PMEM_KERNEL_EBI1_SIZE	0x3A000
@@ -1460,15 +1459,6 @@ static struct platform_device msm_batt_device = {
 	.dev.platform_data	= &msm_psy_batt_data,
 };
 
-int fsa_cable_type = CABLE_TYPE_UNKNOWN;
-int fsa880_get_charger_status(void);
-int fsa880_get_charger_status(void)
-{
-	return fsa_cable_type;
-}
-
-static void jena_usb_power(int onoff, char *path) { }
-
 void trebon_chg_connected(enum chg_type chgtype)
 {
 	char *chg_types[] = {"STD DOWNSTREAM PORT",
@@ -1502,99 +1492,13 @@ void trebon_chg_connected(enum chg_type chgtype)
 	pr_info("\nCharger Type: %s\n", chg_types[chgtype]);
 }
 
-static void jena_usb_cb(u8 attached, struct fsausb_ops *ops)
-{
-	pr_info("[BATT] [%s] Board file [FSA880]: USB Callback\n", __func__);
-
-	set_acc_status = attached ? ACC_TYPE_USB : ACC_TYPE_NONE;
-	if (charger_callbacks && charger_callbacks->set_acc_type)
-		charger_callbacks->set_acc_type(charger_callbacks,
-		set_acc_status);
-
-	set_cable_status = attached ? CABLE_TYPE_USB : CABLE_TYPE_UNKNOWN;
-	if (charger_callbacks && charger_callbacks->set_cable)
-		charger_callbacks->set_cable(charger_callbacks,
-		set_cable_status);
-}
-
-static void jena_charger_cb(u8 attached, struct fsausb_ops *ops)
-{
-	pr_info("[BATT] Board file [FSA880]: Charger Callback\n");
-
-	set_acc_status = attached ? ACC_TYPE_CHARGER : ACC_TYPE_NONE;
-	if (charger_callbacks && charger_callbacks->set_acc_type)
-		charger_callbacks->set_acc_type(charger_callbacks,
-		set_acc_status);
-
-	set_cable_status = attached ? CABLE_TYPE_TA : CABLE_TYPE_UNKNOWN;
-	if (charger_callbacks && charger_callbacks->set_cable)
-		charger_callbacks->set_cable(charger_callbacks,
-		set_cable_status);
-}
-
-static void jena_jig_cb(u8 attached, struct fsausb_ops *ops)
-{
-	pr_info("[BATT] Board file [FSA880]: Jig Callback\n");
-
-	set_acc_status = attached ? ACC_TYPE_JIG : ACC_TYPE_NONE;
-	if (charger_callbacks && charger_callbacks->set_acc_type)
-		charger_callbacks->set_acc_type(charger_callbacks,
-		set_acc_status);
-}
-
-static void jena_ovp_cb(u8 attached, struct fsausb_ops *ops)
-{
-	pr_info("[BATT] Board file [FSA880]: OVP Callback\n");
-
-	set_ovp_status = attached ? OVP_TYPE_OVP : OVP_TYPE_NONE;
-	if (charger_callbacks && charger_callbacks->set_ovp_type)
-		charger_callbacks->set_ovp_type(charger_callbacks,
-		set_ovp_status);
-}
-
 /* check charger cable type for USB phy off */
 static int checkChargerType()
 {
 	return set_cable_status;
 }
 
-static void jena_fsa880_reset_cb(void)
-{
-	pr_info(" [BATT] Board file [FSA880]: Reset Callback\n");
-}
-
 /* For uUSB Switch */
-static struct fsausb_platform_data jena_fsa880_pdata = {
-       .intb_gpio      = MSM_GPIO_TO_INT(GPIO_MUSB_INT),
-       .usb_cb         = jena_usb_cb,
-       .uart_cb        = NULL,
-       .charger_cb     = jena_charger_cb,
-       .jig_cb         = jena_jig_cb,
-	.ovp_cb		= jena_ovp_cb,
-       .reset_cb       = jena_fsa880_reset_cb,
-};
-
-/* I2C 3 */
-static struct i2c_gpio_platform_data fsa880_i2c_gpio_data = {
-	.sda_pin    = GPIO_MUS_SDA,
-	.scl_pin    = GPIO_MUS_SCL,
-};
-
-static struct platform_device fsa880_i2c_gpio_device = {
-	.name       = "i2c-gpio",
-	.id     =  3,
-	.dev        = {
-		.platform_data  = &fsa880_i2c_gpio_data,
-	},
-};
-
-static struct i2c_board_info fsa880_i2c_devices[] = {
-	{
-		I2C_BOARD_INFO("FSA9280", 0x4A >> 1),
-		.platform_data =  &jena_fsa880_pdata,
-		.irq = MSM_GPIO_TO_INT(GPIO_MUSB_INT),
-	},
-};
 
 #ifdef CONFIG_BQ27425_FUEL_GAUGE
 /* Fuel_gauge */
@@ -3282,7 +3186,7 @@ static uint32_t camera_off_gpio_table[] = {
 
 static uint32_t camera_on_gpio_table[] = {
 
-#ifdef CONFIG_MACH_JENA
+#ifdef CONFIG_MACH_TREBON
 #if (CONFIG_MACH_TREBON_HWREV == 0x0)
 	GPIO_CFG(15, 1, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA),
 	GPIO_CFG(96, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA),
@@ -3727,7 +3631,6 @@ static struct platform_device *msm7627a_surf_ffa_devices[] __initdata = {
 #ifdef CONFIG_BQ27425_FUEL_GAUGE
 	&fuelgauge_i2c_gpio_device,
 #endif
-	&fsa880_i2c_gpio_device,
 	&msm_device_pmic_leds,
 	&msm_vibrator_device,
 	&msm_adsp_device,
@@ -4579,7 +4482,6 @@ static void __init msm7x2x_init(void)
 
 	samsung_sys_class_init();
 	i2c_register_board_info( 2, touch_i2c_devices, ARRAY_SIZE(touch_i2c_devices));
-	i2c_register_board_info( 3, fsa880_i2c_devices, ARRAY_SIZE(fsa880_i2c_devices));
 #ifdef CONFIG_BQ27425_FUEL_GAUGE
 	i2c_register_board_info(6, fg_i2c_devices, ARRAY_SIZE(fg_i2c_devices));
 #endif
