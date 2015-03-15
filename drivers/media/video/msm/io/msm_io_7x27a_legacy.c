@@ -428,7 +428,7 @@ int msm_camio_sensor_clk_on(struct platform_device *pdev)
 /* In case of GEIM has to control MCLK in own camera driver.        */
 /* Because SR300PC20, camera sensor, doesn't accept to enable MCLK  */
 /* before the power supplied. */
-#if defined(CONFIG_MACH_GEIM) || defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_GEIM) 
 	return rc;
 #else
 	return msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
@@ -437,7 +437,7 @@ int msm_camio_sensor_clk_on(struct platform_device *pdev)
 
 int msm_camio_sensor_clk_off(struct platform_device *pdev)
 {
-#if defined(CONFIG_MACH_GEIM) || defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_GEIM) || defined(CONFIG_MACH_TREBON)
 	int rc = 0;
 #endif
 	const struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
@@ -447,7 +447,7 @@ int msm_camio_sensor_clk_off(struct platform_device *pdev)
 /* In case of GEIM has to control MCLK in own camera driver.         */
 /* Because SR300PC20, camera sensor, doesn't accept to disable MCLK  */
 /* after turning off the power. */
-#if defined(CONFIG_MACH_GEIM) || defined(CONFIG_MACH_JENA)
+#if defined(CONFIG_MACH_GEIM) 
 	return rc;
 #else
 	return msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
