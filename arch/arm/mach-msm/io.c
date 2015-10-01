@@ -25,7 +25,6 @@
 #include <mach/hardware.h>
 #include <asm/page.h>
 #include <mach/msm_iomap.h>
-#include <mach/memory.h>
 #include <asm/mach/map.h>
 #include <linux/dma-mapping.h>
 
@@ -100,7 +99,6 @@ void __init msm_map_common_io(void)
 	asm("mcr p15, 0, %0, c15, c2, 4" : : "r" (0));
 #endif
 	msm_map_io(msm_io_desc, ARRAY_SIZE(msm_io_desc));
-	map_page_strongly_ordered();
 }
 #endif
 
@@ -302,6 +300,7 @@ static struct map_desc msm_8974_io_desc[] __initdata = {
 	MSM_CHIP_DEVICE(QGIC_CPU, MSM8974),
 	MSM_CHIP_DEVICE(APCS_GCC, MSM8974),
 	MSM_CHIP_DEVICE(TLMM, MSM8974),
+	MSM_CHIP_DEVICE(MPM2_PSHOLD, MSM8974),
 	{
 		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
 		.length =   MSM_SHARED_RAM_SIZE,
@@ -427,8 +426,6 @@ static struct map_desc msm8625_io_desc[] __initdata = {
 	MSM_CHIP_DEVICE(CLK_CTL, MSM8625),
 	MSM_CHIP_DEVICE(SAW0, MSM8625),
 	MSM_CHIP_DEVICE(SAW1, MSM8625),
-	MSM_CHIP_DEVICE(SAW2, MSM8625),
-	MSM_CHIP_DEVICE(SAW3, MSM8625),
 	MSM_CHIP_DEVICE(AD5, MSM7XXX),
 	MSM_CHIP_DEVICE(MDC, MSM7XXX),
 #if defined(CONFIG_DEBUG_MSM_UART1) || defined(CONFIG_DEBUG_MSM_UART2) || \
@@ -453,7 +450,6 @@ static struct map_desc msm8625_io_desc[] __initdata = {
 void __init msm_map_msm8625_io(void)
 {
 	msm_map_io(msm8625_io_desc, ARRAY_SIZE(msm8625_io_desc));
-	map_page_strongly_ordered();
 }
 #else
 void __init msm_map_msm8625_io(void) { return; }

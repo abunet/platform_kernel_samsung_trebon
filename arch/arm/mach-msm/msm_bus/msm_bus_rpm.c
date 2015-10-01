@@ -239,7 +239,7 @@ static void msm_bus_rpm_update_bw(struct msm_bus_inode_info *hop,
 	struct msm_bus_inode_info *info,
 	struct msm_bus_fabric_registration *fab_pdata,
 	void *sel_cdata, int *master_tiers,
-	long int add_bw)
+	int64_t add_bw)
 {
 	int index, i, j, tiers, ports;
 	struct commit_data *sel_cd = (struct commit_data *)sel_cdata;
@@ -302,9 +302,9 @@ static void msm_bus_rpm_update_bw(struct msm_bus_inode_info *hop,
 					msm_bus_create_bw_tier_pair_bytes(tier,
 					tieredbw);
 				sel_cd->actarb[index] = tieredbw;
-				MSM_BUS_DBG("tier:%d mport: %d tiered_bw:%ld "
-				"bwsum: %ld\n", hop_tier, info->node_info->
-				masterp[i], tieredbw, *hop->link_info.sel_bw);
+				MSM_BUS_DBG("tr:%d mpor:%d tbw:%ld bws: %lld\n",
+					hop_tier, info->node_info->masterp[i],
+					tieredbw, *hop->link_info.sel_bw);
 			}
 		}
 	}
@@ -314,10 +314,12 @@ static void msm_bus_rpm_update_bw(struct msm_bus_inode_info *hop,
 	for (i = 0; i < ports; i++) {
 		sel_cd->bwsum[hop->node_info->slavep[i]]
 			= (uint16_t)msm_bus_create_bw_tier_pair_bytes(0,
-			(*hop->link_info.sel_bw/hop->node_info->num_sports));
-		MSM_BUS_DBG("slavep:%d, link_bw: %ld\n",
-			hop->node_info->slavep[i], (*hop->link_info.sel_bw/
-			hop->node_info->num_sports));
+			(uint32_t)msm_bus_div64(hop->node_info->num_sports,
+			*hop->link_info.sel_bw));
+		MSM_BUS_DBG("slavep:%d, link_bw: %u\n",
+			hop->node_info->slavep[i], (uint32_t)
+			msm_bus_div64(hop->node_info->num_sports,
+			*hop->link_info.sel_bw));
 	}
 }
 
@@ -344,27 +346,6 @@ static int msm_bus_rpm_compare_cdata(
 		return ret;
 	}
 
-	return 0;
-}
-
-/**
-* msm_bus_rpm_clear_arb_data() - Clear arb data before turning off
-**/
-static int msm_bus_rpm_clear_arb(struct msm_bus_fabric_registration
-	*fab_pdata, void **cdata)
-{
-	size_t n;
-	struct commit_data *dual_cd, *act_cd;
-
-	dual_cd = (struct commit_data *)cdata[DUAL_CTX];
-	act_cd = (struct commit_data *)cdata[ACTIVE_CTX];
-	n = sizeof(uint16_t) * fab_pdata->nslaves;
-	memset(dual_cd->bwsum, 0, n);
-	memset(act_cd->bwsum, 0, n);
-	n = sizeof(uint16_t *) * ((fab_pdata->ntieredslaves *
-		fab_pdata->nmasters) + 1);
-	memset(dual_cd->arb, 0, n);
-	memset(act_cd->arb, 0, n);
 	return 0;
 }
 
@@ -631,30 +612,6 @@ static void *msm_bus_rpm_allocate_rpm_data(struct platform_device *pdev,
 	return (void *)rpm_data;
 }
 
-/**
-* msm_bus_rpm_clear_arb_data() - Clear arb data before turning off
-**/
-static int msm_bus_rpm_clear_arb(struct msm_bus_fabric_registration
-	*fab_pdata, void **cdata)
-{
-	int i;
-	size_t n;
-	struct commit_data *dual_cd, *act_cd;
-
-	dual_cd = (struct commit_data *)cdata[DUAL_CTX];
-	act_cd = (struct commit_data *)cdata[ACTIVE_CTX];
-	n = sizeof(uint16_t) * fab_pdata->nslaves;
-	memset(dual_cd->bwsum, 0, n);
-	memset(act_cd->bwsum, 0, n);
-	n = sizeof(uint8_t *) * ((fab_pdata->ntieredslaves *
-		fab_pdata->nmasters) + 1);
-	for (i = 0; i < NUM_TIERS; i++) {
-		memset(dual_cd->arb[i], 0, n);
-		memset(act_cd->arb[i], 0, n);
-	}
-	return 0;
-}
-
 static int msm_bus_rpm_compare_cdata(
 	struct msm_bus_fabric_registration *fab_pdata,
 	struct commit_data *cd1, struct commit_data *cd2)
@@ -801,7 +758,7 @@ static void msm_bus_rpm_update_bw(struct msm_bus_inode_info *hop,
 	struct msm_bus_inode_info *info,
 	struct msm_bus_fabric_registration *fab_pdata,
 	void *sel_cdata, int *master_tiers,
-	long int add_bw)
+	int64_t add_bw)
 {
 	int index, i, j, tiers, ports;
 	struct commit_data *sel_cd = (struct commit_data *)sel_cdata;
@@ -853,9 +810,9 @@ static void msm_bus_rpm_update_bw(struct msm_bus_inode_info *hop,
 				sel_cd->arb[tier][index] =
 				msm_bus_create_bw_tier_pair_bytes(0, tieredbw);
 				sel_cd->actarb[tier][index] = tieredbw;
-				MSM_BUS_DBG("tier:%d mport: %d tiered_bw:%lu "
-				"bwsum: %ld\n", hop_tier, info->node_info->
-				masterp[i], tieredbw, *hop->link_info.sel_bw);
+				MSM_BUS_DBG("tr:%d mpor:%d tbw:%lu bws: %lld\n",
+				hop_tier, info->node_info->masterp[i], tieredbw,
+				*hop->link_info.sel_bw);
 			}
 		}
 	}
@@ -865,11 +822,13 @@ static void msm_bus_rpm_update_bw(struct msm_bus_inode_info *hop,
 	ports = INTERLEAVED_VAL(fab_pdata, hop->node_info->num_sports);
 	for (i = 0; i < ports; i++) {
 		sel_cd->bwsum[hop->node_info->slavep[i]]
-			= msm_bus_pack_bwsum_bytes((*hop->link_info.
-			sel_bw/hop->node_info->num_sports));
-		MSM_BUS_DBG("slavep:%d, link_bw: %ld\n",
-			hop->node_info->slavep[i], (*hop->link_info.sel_bw/
-			hop->node_info->num_sports));
+			= msm_bus_pack_bwsum_bytes((uint32_t)
+			msm_bus_div64(hop->node_info->num_sports,
+			*hop->link_info.sel_bw));
+		MSM_BUS_DBG("slavep:%d, link_bw: %lld\n",
+			hop->node_info->slavep[i],
+			msm_bus_div64(hop->node_info->num_sports,
+			*hop->link_info.sel_bw));
 	}
 }
 
@@ -991,6 +950,12 @@ static int msm_bus_rpm_port_unhalt(uint32_t haltid, uint8_t mport)
 	return status;
 }
 
+int msm_bus_remote_hw_commit(struct msm_bus_fabric_registration
+	*fab_pdata, void *hw_data, void **cdata)
+{
+	return 0;
+}
+
 int msm_bus_rpm_hw_init(struct msm_bus_fabric_registration *pdata,
 	struct msm_bus_hw_algorithm *hw_algo)
 {
@@ -1003,7 +968,6 @@ int msm_bus_rpm_hw_init(struct msm_bus_fabric_registration *pdata,
 	hw_algo->commit = msm_bus_rpm_commit;
 	hw_algo->port_halt = msm_bus_rpm_port_halt;
 	hw_algo->port_unhalt = msm_bus_rpm_port_unhalt;
-	hw_algo->clear_arb_data = msm_bus_rpm_clear_arb;
 	if (!pdata->ahb)
 		pdata->rpm_enabled = 1;
 	return 0;

@@ -50,29 +50,6 @@ choice
 	  This option sets which CPUFreq governor shall be loaded at
 	  startup. If in doubt, select 'performance'.
 
-config CPU_FREQ_DEFAULT_GOV_HYPER
-	bool "hyper"
-	select CPU_FREQ_GOV_HYPER
-	---help---
-	  Use the CPUFreq governor 'hyper' as default. This allows
-	  you to get a full dynamic cpu frequency capable system by simply
-	  loading your cpufreq low-level hardware driver, using the
-	  'hyper' governor for latency-sensitive workloads.
-	  
-config CPU_FREQ_DEFAULT_GOV_ONDEMANDX
-	bool "ondemandX"
-	select CPU_FREQ_GOV_ONDEMANDX
-	select CPU_FREQ_GOV_PERFORMANCE
-	help
-	  Use the CPUFreq governor 'ondemand' as default. This allows
-	  you to get a full dynamic frequency capable system by simply
-	  loading your cpufreq low-level hardware driver.
-	  Be aware that not all cpufreq drivers support the ondemand
-	  governor. If unsure have a look at the help section of the
-	  driver. Fallback governor will be the performance governor.
-	  OndemandX has built in sleep profile, but not working Sysfs
-	  interface.
-
 config CPU_FREQ_DEFAULT_GOV_PERFORMANCE
 	bool "performance"
 	select CPU_FREQ_GOV_PERFORMANCE
@@ -132,39 +109,7 @@ config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	  loading your cpufreq low-level hardware driver, using the
 	  'interactive' governor for latency-sensitive workloads.
 
-config CPU_FREQ_DEFAULT_GOV_LIONHEART
-        bool "lionheart"
-        select CPU_FREQ_GOV_LIONHEART
-        help
-         Use the CPUFreq governor 'lionheart' as default.
-
 endchoice
-
-config CPU_FREQ_GOV_HYPER
-	tristate "'hyper' cpufreq governor"
-	depends on CPU_FREQ
-	---help---
-	  'hyper' - A tweaked "ondemand" based smart and smooth optimized governor!
-	
-	   If in doubt, say N.
-	   
-config CPU_FREQ_GOV_ONDEMANDX
-	tristate "'ondemandx' cpufreq policy governor"
-	select CPU_FREQ_TABLE
-	help
-	  'ondemandx' - This driver adds a dynamic cpufreq policy governor.
-	  The governor does a periodic polling and
-	  changes frequency based on the CPU utilization.
-	  The support for this governor depends on CPU capability to
-	  do fast frequency switching (i.e, very low latency frequency
-	  transitions).
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cpufreq_ondemand.
-
-	  For details, take a look at linux/Documentation/cpu-freq.
-
-	  If in doubt, say N.
 
 config CPU_FREQ_GOV_PERFORMANCE
 	tristate "'performance' governor"
@@ -260,10 +205,6 @@ config CPU_FREQ_GOV_CONSERVATIVE
 	  For details, take a look at linux/Documentation/cpu-freq.
 
 	  If in doubt, say N.
-
-config CPU_FREQ_GOV_LIONHEART
-        tristate "'lionheart' cpufreq governor"
-        depends on CPU_FREQ
 
 menu "x86 CPU frequency scaling drivers"
 depends on X86

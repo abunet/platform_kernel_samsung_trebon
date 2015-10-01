@@ -536,9 +536,6 @@ static int msm_otg_set_power(struct usb_phy *xceiv, unsigned mA)
 				test_bit(ID_B, &dev->inputs))
 		charge = USB_IDCHG_MAX;
 
-	if (dev->curr_power == charge)
-		return 0;
-
 	pr_debug("Charging with %dmA current\n", charge);
 	/* Call vbus_draw only if the charger is of known type and also
 	 * ignore request to stop charging as a result of suspend interrupt
@@ -547,8 +544,6 @@ static int msm_otg_set_power(struct usb_phy *xceiv, unsigned mA)
 	if (pdata->chg_vbus_draw && new_chg != USB_CHG_TYPE__INVALID &&
 		(charge || new_chg != USB_CHG_TYPE__WALLCHARGER))
 			pdata->chg_vbus_draw(charge);
-
-	dev->curr_power = charge;
 
 	if (new_chg == USB_CHG_TYPE__WALLCHARGER) {
 		wake_lock(&dev->wlock);
@@ -1234,7 +1229,7 @@ void msm_otg_set_vbus_state(int online)
 static irqreturn_t msm_otg_irq(int irq, void *data)
 {
 	struct msm_otg *dev = data;
-	u32 otgsc, sts, pc;
+	u32 otgsc, sts, pc, sts_mask;
 	irqreturn_t ret = IRQ_HANDLED;
 	int work = 0;
 	enum usb_otg_state state;
@@ -1255,16 +1250,12 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 	otgsc = readl(USB_OTGSC);
 	sts = readl(USB_USBSTS);
 
-	/* At times during USB disconnect, hardware generates 1MSIS interrupt
-	 * during PHY reset, which leads to irq not handled error as IRQ_NONE
-	 * is notified. To workaround this issue, check for all the
-	 * OTG_INTR_STS_MASK bits and if set, clear them and notify IRQ_HANDLED.
-	 */
-	if (!((otgsc & OTGSC_INTR_STS_MASK) || (sts & STS_PCI))) {
+	sts_mask = (otgsc & OTGSC_INTR_MASK) >> 8;
+
+	if (!((otgsc & sts_mask) || (sts & STS_PCI))) {
 		ret = IRQ_NONE;
 		goto out;
 	}
-	writel_relaxed(otgsc, USB_OTGSC);
 
 	spin_lock_irqsave(&dev->lock, flags);
 	state = dev->phy.state;
@@ -1286,8 +1277,10 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 			set_bit(A_BUS_REQ, &dev->inputs);
 			clear_bit(ID, &dev->inputs);
 		}
+		writel(otgsc, USB_OTGSC);
 		work = 1;
 	} else if (otgsc & OTGSC_BSVIS) {
+		writel(otgsc, USB_OTGSC);
 		/* BSV interrupt comes when operating as an A-device
 		 * (VBUS on/off).
 		 * But, handle BSV when charger is removed from ACA in ID_A
@@ -1305,6 +1298,7 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 		work = 1;
 	} else if (otgsc & OTGSC_DPIS) {
 		pr_debug("DPIS detected\n");
+		writel(otgsc, USB_OTGSC);
 		set_bit(A_SRP_DET, &dev->inputs);
 		set_bit(A_BUS_REQ, &dev->inputs);
 		work = 1;

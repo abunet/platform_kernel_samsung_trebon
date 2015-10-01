@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,8 +20,22 @@
 #include "mipi_novatek.h"
 #include "mdp4.h"
 
+#include "../board-8064.h"
+#include <asm/mach-types.h>
+#include <linux/pwm.h>
+#include <linux/mfd/pm8xxx/pm8921.h>
+#include <linux/gpio.h>
+
+#define PWM_FREQ_HZ 300
+#define PWM_PERIOD_USEC (USEC_PER_SEC / PWM_FREQ_HZ)
+#define PWM_LEVEL 255
+#define PWM_DUTY_LEVEL \
+	(PWM_PERIOD_USEC / PWM_LEVEL)
+
+#define gpio_EN_VDD_BL PM8921_GPIO_PM_TO_SYS(23)
 
 static struct mipi_dsi_panel_platform_data *mipi_novatek_pdata;
+static struct pwm_device *bl_lpm;
 
 static struct dsi_buf novatek_tx_buf;
 static struct dsi_buf novatek_rx_buf;
@@ -297,24 +311,44 @@ static struct dsi_cmd_desc novatek_display_off_cmds[] = {
 		sizeof(enter_sleep), enter_sleep}
 };
 
+// -- Novatek NT71392 video mode turn on peripheral -- //
+static char display_turn_on_novatek[2] = {0x00, 0x00};
+
+static struct dsi_cmd_desc novatek_video_turn_on_cmds[] = {
+	{DTYPE_PERIPHERAL_ON, 1, 0, 0, 50,
+		sizeof(display_turn_on_novatek), display_turn_on_novatek},
+};
+// --------------------------------------------- //
+
+
 static char manufacture_id[2] = {0x04, 0x00}; /* DTYPE_DCS_READ */
 
 static struct dsi_cmd_desc novatek_manufacture_id_cmd = {
 	DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(manufacture_id), manufacture_id};
 
+struct dcs_cmd_req cmdreq;
+static u32 manu_id;
+
+static void mipi_novatek_manufacture_cb(u32 data)
+{
+	manu_id = data;
+	pr_info("%s: manufacture_id=%x\n", __func__, manu_id);
+}
+
 static uint32 mipi_novatek_manufacture_id(struct msm_fb_data_type *mfd)
 {
-	struct dsi_buf *rp, *tp;
-	struct dsi_cmd_desc *cmd;
-	uint32 *lp;
+	cmdreq.cmds = &novatek_manufacture_id_cmd;
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_RX | CMD_REQ_COMMIT;
+	cmdreq.rlen = 3;
+	cmdreq.cb = mipi_novatek_manufacture_cb; /* call back */
+	mipi_dsi_cmdlist_put(&cmdreq);
 
-	tp = &novatek_tx_buf;
-	rp = &novatek_rx_buf;
-	cmd = &novatek_manufacture_id_cmd;
-	mipi_dsi_cmds_rx(mfd, tp, rp, cmd, 3);
-	lp = (uint32 *)rp->data;
-	pr_info("%s: manufacture_id=%x\n", __func__, *lp);
-	return *lp;
+	/*
+	 * blocked here, untill call back called
+	 */
+
+	return manu_id;
 }
 
 static int fpga_addr;
@@ -380,6 +414,9 @@ static int mipi_novatek_lcd_on(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	struct mipi_panel_info *mipi;
 	struct msm_panel_info *pinfo;
+	int ret;
+
+	printk("%s+\n", __func__);
 
 	mfd = platform_get_drvdata(pdev);
 	if (!mfd)
@@ -388,29 +425,70 @@ static int mipi_novatek_lcd_on(struct platform_device *pdev)
 		return -EINVAL;
 
 	pinfo = &mfd->panel_info;
-	if (pinfo->is_3d_panel)
-		support_3d = TRUE;
+//	if (pinfo->is_3d_panel)
+//		support_3d = TRUE;
 
 	mipi  = &mfd->panel_info.mipi;
 
+	msleep(500);
+
 	if (mipi->mode == DSI_VIDEO_MODE) {
-		mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_video_on_cmds,
-				ARRAY_SIZE(novatek_video_on_cmds));
+		printk("%s, video mode turn on peripheral+\n", __func__);
+		cmdreq.cmds = novatek_video_turn_on_cmds;
+		cmdreq.cmds_cnt = ARRAY_SIZE(novatek_video_turn_on_cmds);
+		cmdreq.flags = CMD_REQ_COMMIT;
+		cmdreq.rlen = 0;
+		cmdreq.cb = NULL;
+		mipi_dsi_cmdlist_put(&cmdreq);
+		printk("%s, video mode turn on peripheral-\n", __func__);
+	}
+
+	msleep(210);
+
+	if (bl_lpm) {
+		ret = pwm_config(bl_lpm, PWM_DUTY_LEVEL * 40,
+			PWM_PERIOD_USEC);
+		if (ret) {
+			pr_err("pwm_config on lpm failed %d\n", ret);
+		}
+		ret = pwm_enable(bl_lpm);
+		if (ret)
+			pr_err("pwm enable/disable on lpm failed"
+				"for bl 255\n");
+	}
+
+	printk("%s-\n", __func__);
+	return 0;
+
+	// unsued commands
+	if (mipi->mode == DSI_VIDEO_MODE) {
+		cmdreq.cmds = novatek_video_on_cmds;
+		cmdreq.cmds_cnt = ARRAY_SIZE(novatek_video_on_cmds);
+		cmdreq.flags = CMD_REQ_COMMIT;
+		cmdreq.rlen = 0;
+		cmdreq.cb = NULL;
+		mipi_dsi_cmdlist_put(&cmdreq);
 	} else {
-		mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_cmd_on_cmds,
-				ARRAY_SIZE(novatek_cmd_on_cmds));
+		cmdreq.cmds = novatek_cmd_on_cmds;
+		cmdreq.cmds_cnt = ARRAY_SIZE(novatek_cmd_on_cmds);
+		cmdreq.flags = CMD_REQ_COMMIT;
+		cmdreq.rlen = 0;
+		cmdreq.cb = NULL;
+		mipi_dsi_cmdlist_put(&cmdreq);
 
 		/* clean up ack_err_status */
 		mipi_dsi_cmd_bta_sw_trigger();
 		mipi_novatek_manufacture_id(mfd);
 	}
-
 	return 0;
 }
 
 static int mipi_novatek_lcd_off(struct platform_device *pdev)
 {
 	struct msm_fb_data_type *mfd;
+	int ret;
+
+	printk("%s+\n", __func__);
 
 	mfd = platform_get_drvdata(pdev);
 
@@ -419,22 +497,77 @@ static int mipi_novatek_lcd_off(struct platform_device *pdev)
 	if (mfd->key != MFD_KEY)
 		return -EINVAL;
 
-	mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_display_off_cmds,
-			ARRAY_SIZE(novatek_display_off_cmds));
+	if (bl_lpm) {
+		ret = pwm_config(bl_lpm, 0, PWM_PERIOD_USEC);
+		if (ret) {
+			pr_err("pwm_config on lpm failed %d\n", ret);
+		}
+			pwm_disable(bl_lpm);
+	}
 
+	msleep(210);
+
+	printk("%s-\n", __func__);
+	return 0;
+
+	// unused commands
+	cmdreq.cmds = novatek_display_off_cmds;
+	cmdreq.cmds_cnt = ARRAY_SIZE(novatek_display_off_cmds);
+	cmdreq.flags = CMD_REQ_COMMIT;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+
+	mipi_dsi_cmdlist_put(&cmdreq);
+
+	return 0;
+}
+
+static int mipi_novatek_lcd_late_init(struct platform_device *pdev)
+{
 	return 0;
 }
 
 DEFINE_LED_TRIGGER(bkl_led_trigger);
 
+#if 0
 static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
 static struct dsi_cmd_desc backlight_cmd = {
 	DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(led_pwm1), led_pwm1};
-
-struct dcs_cmd_req cmdreq;
+#endif
 
 static void mipi_novatek_set_backlight(struct msm_fb_data_type *mfd)
 {
+	int ret;
+
+	pr_debug("%s: back light level %d\n", __func__, mfd->bl_level);
+
+	if (bl_lpm) {
+		ret = pwm_config(bl_lpm, PWM_DUTY_LEVEL *
+			mfd->bl_level, PWM_PERIOD_USEC);
+		if (ret) {
+			pr_err("pwm_config on lpm failed %d\n", ret);
+			return;
+		}
+		if (mfd->bl_level) {
+			ret = pwm_enable(bl_lpm);
+			if (ret)
+				pr_err("pwm enable/disable on lpm failed"
+				"for bl %d\n",	mfd->bl_level);
+		} else {
+			pwm_disable(bl_lpm);
+		}
+	}
+}
+
+#if 0
+static void mipi_novatek_set_backlight(struct msm_fb_data_type *mfd)
+{
+
+	if (mipi_novatek_pdata &&
+	    mipi_novatek_pdata->gpio_set_backlight) {
+		mipi_novatek_pdata->gpio_set_backlight(mfd->bl_level);
+		return;
+	}
 
 	if ((mipi_novatek_pdata->enable_wled_bl_ctrl)
 	    && (wled_trigger_initialized)) {
@@ -446,12 +579,13 @@ static void mipi_novatek_set_backlight(struct msm_fb_data_type *mfd)
 
 	cmdreq.cmds = &backlight_cmd;
 	cmdreq.cmds_cnt = 1;
-	cmdreq.flags = 0;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
 
 	mipi_dsi_cmdlist_put(&cmdreq);
 }
+#endif
 
 static int mipi_dsi_3d_barrier_sysfs_register(struct device *dev);
 static int barrier_mode;
@@ -463,6 +597,8 @@ static int __devinit mipi_novatek_lcd_probe(struct platform_device *pdev)
 	struct platform_device *current_pdev;
 	static struct mipi_dsi_phy_ctrl *phy_settings;
 	static char dlane_swap;
+
+	printk("%s+\n", __func__);
 
 	if (pdev->id == 0) {
 		mipi_novatek_pdata = pdev->dev.platform_data;
@@ -493,6 +629,18 @@ static int __devinit mipi_novatek_lcd_probe(struct platform_device *pdev)
 		return 0;
 	}
 
+	if (mipi_novatek_pdata != NULL) {
+		bl_lpm = pwm_request(mipi_novatek_pdata->gpio[0],
+			"backlight");
+	}
+
+	if (bl_lpm == NULL || IS_ERR(bl_lpm)) {
+		pr_err("%s pwm_request() failed\n", __func__);
+		bl_lpm = NULL;
+	}
+	pr_debug("bl_lpm = %p lpm = %d\n", bl_lpm,
+		mipi_novatek_pdata->gpio[0]);
+
 	current_pdev = msm_fb_add_device(pdev);
 
 	if (current_pdev) {
@@ -510,6 +658,7 @@ static int __devinit mipi_novatek_lcd_probe(struct platform_device *pdev)
 		if (dlane_swap)
 			mipi->dlane_swap = dlane_swap;
 	}
+	printk("%s-\n", __func__);
 	return 0;
 }
 
@@ -523,6 +672,7 @@ static struct platform_driver this_driver = {
 static struct msm_fb_panel_data novatek_panel_data = {
 	.on		= mipi_novatek_lcd_on,
 	.off		= mipi_novatek_lcd_off,
+	.late_init	= mipi_novatek_lcd_late_init,
 	.set_backlight = mipi_novatek_set_backlight,
 };
 
@@ -530,7 +680,7 @@ static ssize_t mipi_dsi_3d_barrier_read(struct device *dev,
 				struct device_attribute *attr,
 				char *buf)
 {
-	return snprintf((char *)buf, sizeof(buf), "%u\n", barrier_mode);
+	return snprintf((char *)buf, PAGE_SIZE, "%u\n", barrier_mode);
 }
 
 static ssize_t mipi_dsi_3d_barrier_write(struct device *dev,

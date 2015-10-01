@@ -109,11 +109,21 @@ int pll_vote_clk_is_enabled(struct clk *c)
 	return !!(readl_relaxed(PLL_STATUS_REG(pllv)) & pllv->status_mask);
 }
 
+static enum handoff pll_vote_clk_handoff(struct clk *c)
+{
+	struct pll_vote_clk *pllv = to_pll_vote_clk(c);
+	if (readl_relaxed(PLL_EN_REG(pllv)) & pllv->en_mask)
+		return HANDOFF_ENABLED_CLK;
+
+	return HANDOFF_DISABLED_CLK;
+}
+
 struct clk_ops clk_ops_pll_vote = {
 	.enable = pll_vote_clk_enable,
 	.disable = pll_vote_clk_disable,
 	.is_enabled = pll_vote_clk_is_enabled,
 	.get_parent = pll_vote_clk_get_parent,
+	.handoff = pll_vote_clk_handoff,
 };
 
 static void __pll_clk_enable_reg(void __iomem *mode_reg)
@@ -179,6 +189,18 @@ static void local_pll_clk_disable(struct clk *c)
 	spin_unlock_irqrestore(&pll_reg_lock, flags);
 }
 
+static enum handoff local_pll_clk_handoff(struct clk *c)
+{
+	struct pll_clk *pll = to_pll_clk(c);
+	u32 mode = readl_relaxed(PLL_MODE_REG(pll));
+	u32 mask = PLL_BYPASSNL | PLL_RESET_N | PLL_OUTCTRL;
+
+	if ((mode & mask) == mask)
+		return HANDOFF_ENABLED_CLK;
+
+	return HANDOFF_DISABLED_CLK;
+}
+
 static struct clk *local_pll_clk_get_parent(struct clk *c)
 {
 	return to_pll_clk(c)->parent;
@@ -225,7 +247,7 @@ int sr_pll_clk_enable(struct clk *c)
 
 #define PLL_LOCKED_BIT BIT(16)
 
-int msm8974_pll_clk_enable(struct clk *c)
+int sr_hpm_lp_pll_clk_enable(struct clk *c)
 {
 	unsigned long flags;
 	struct pll_clk *pll = to_pll_clk(c);
@@ -233,23 +255,12 @@ int msm8974_pll_clk_enable(struct clk *c)
 	int ret = 0;
 
 	spin_lock_irqsave(&pll_reg_lock, flags);
-	mode = readl_relaxed(PLL_MODE_REG(pll));
-	/* Disable PLL bypass mode. */
-	mode |= PLL_BYPASSNL;
+
+	/* Disable PLL bypass mode and de-assert reset. */
+	mode = PLL_BYPASSNL | PLL_RESET_N;
 	writel_relaxed(mode, PLL_MODE_REG(pll));
 
-	/*
-	 * H/W requires a 5us delay between disabling the bypass and
-	 * de-asserting the reset. Delay 10us just to be safe.
-	 */
-	mb();
-	udelay(10);
-
-	/* De-assert active-low PLL reset. */
-	mode |= PLL_RESET_N;
-	writel_relaxed(mode, PLL_MODE_REG(pll));
-
-	/* Wait for pll to enable. */
+	/* Wait for pll to lock. */
 	for (count = ENABLE_WAIT_MAX_LOOPS; count > 0; count--) {
 		if (readl_relaxed(PLL_STATUS_REG(pll)) & PLL_LOCKED_BIT)
 			break;
@@ -277,6 +288,7 @@ out:
 struct clk_ops clk_ops_local_pll = {
 	.enable = local_pll_clk_enable,
 	.disable = local_pll_clk_disable,
+	.handoff = local_pll_clk_handoff,
 	.get_parent = local_pll_clk_get_parent,
 };
 
@@ -293,7 +305,6 @@ static struct pll_rate pll_l_rate[] = {
 	{41, 800000000},
 	{50, 960000000},
 	{52, 1008000000},
-	{57, 1104000000},
 	{60, 1152000000},
 	{62, 1200000000},
 	{63, 1209600000},
@@ -431,7 +442,8 @@ struct clk_ops clk_ops_pll = {
 	.is_enabled = pll_clk_is_enabled,
 };
 
-static void __init __set_fsm_mode(void __iomem *mode_reg)
+static void __init __set_fsm_mode(void __iomem *mode_reg,
+					u32 bias_count, u32 lock_count)
 {
 	u32 regval = readl_relaxed(mode_reg);
 
@@ -441,12 +453,12 @@ static void __init __set_fsm_mode(void __iomem *mode_reg)
 
 	/* Program bias count */
 	regval &= ~BM(19, 14);
-	regval |= BVAL(19, 14, 0x1);
+	regval |= BVAL(19, 14, bias_count);
 	writel_relaxed(regval, mode_reg);
 
 	/* Program lock count */
 	regval &= ~BM(13, 8);
-	regval |= BVAL(13, 8, 0x8);
+	regval |= BVAL(13, 8, lock_count);
 	writel_relaxed(regval, mode_reg);
 
 	/* Enable PLL FSM voting */
@@ -454,7 +466,7 @@ static void __init __set_fsm_mode(void __iomem *mode_reg)
 	writel_relaxed(regval, mode_reg);
 }
 
-void __init configure_pll(struct pll_config *config,
+void __init __configure_pll(struct pll_config *config,
 		struct pll_config_regs *regs, u32 ena_fsm_mode)
 {
 	u32 regval;
@@ -487,8 +499,21 @@ void __init configure_pll(struct pll_config *config,
 	regval &= ~config->vco_mask;
 	regval |= config->vco_val;
 	writel_relaxed(regval, PLL_CONFIG_REG(regs));
-
-	/* Configure in FSM mode if necessary */
-	if (ena_fsm_mode)
-		__set_fsm_mode(PLL_MODE_REG(regs));
 }
+
+void __init configure_sr_pll(struct pll_config *config,
+		struct pll_config_regs *regs, u32 ena_fsm_mode)
+{
+	__configure_pll(config, regs, ena_fsm_mode);
+	if (ena_fsm_mode)
+		__set_fsm_mode(PLL_MODE_REG(regs), 0x1, 0x8);
+}
+
+void __init configure_sr_hpm_lp_pll(struct pll_config *config,
+		struct pll_config_regs *regs, u32 ena_fsm_mode)
+{
+	__configure_pll(config, regs, ena_fsm_mode);
+	if (ena_fsm_mode)
+		__set_fsm_mode(PLL_MODE_REG(regs), 0x1, 0x0);
+}
+

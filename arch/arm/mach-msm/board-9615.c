@@ -29,7 +29,7 @@
 #include <linux/power/ltc4088-charger.h>
 #include <linux/gpio.h>
 #include <linux/msm_tsens.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <linux/memory.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -50,6 +50,7 @@
 #include "devices.h"
 #include "board-9615.h"
 #include "pm.h"
+#include "clock.h"
 #include "pm-boot.h"
 #include <mach/gpiomux.h>
 #include "ci13xxx_udc.h"
@@ -934,7 +935,9 @@ static struct platform_device *common_devices[] = {
 	&msm_bus_def_fab,
 	&msm9615_rpm_log_device,
 	&msm9615_rpm_stat_device,
+	&msm9615_rpm_master_stat_device,
 	&msm_tsens_device,
+	&msm9615_pm_8x60,
 };
 
 static void __init msm9615_i2c_init(void)
@@ -978,6 +981,7 @@ static void __init msm9615_common_init(void)
 				msm_android_usb_hsic_device.dev.platform_data;
 
 	msm9615_device_init();
+	platform_device_register(&msm_gpio_device);
 	msm9615_init_gpiomux();
 	msm9615_i2c_init();
 	regulator_suppress_info_printing();

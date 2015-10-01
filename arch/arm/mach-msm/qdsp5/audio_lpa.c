@@ -1,7 +1,7 @@
 
 /* audio_lpa.c - low power audio driver
  *
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * Based on the PCM decoder driver in arch/arm/mach-msm/qdsp5/audio_pcm.c
  *
@@ -37,7 +37,7 @@
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/earlysuspend.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/msm_audio.h>
@@ -48,7 +48,6 @@
 #include <mach/iommu_domains.h>
 #include <mach/qdsp5/qdsp5audppcmdi.h>
 #include <mach/qdsp5/qdsp5audppmsg.h>
-#include <mach/qdsp5/qdsp5audpp.h>
 #include <mach/qdsp5/qdsp5audplaycmdi.h>
 #include <mach/qdsp5/qdsp5audplaymsg.h>
 #include <mach/qdsp5/qdsp5rmtcmdi.h>
@@ -293,10 +292,9 @@ static int audio_enable(struct audio *audio)
 	cfg.snd_method = RPC_SND_METHOD_MIDI;
 
 	rc = audmgr_enable(&audio->audmgr, &cfg);
-	if (rc < 0) {
-		msm_adsp_dump(audio->audplay);
+	if (rc < 0)
 		return rc;
-	}
+
 	if (msm_adsp_enable(audio->audplay)) {
 		MM_ERR("msm_adsp_enable(audplay) failed\n");
 		audmgr_disable(&audio->audmgr);
@@ -336,9 +334,7 @@ static int audio_disable(struct audio *audio)
 		wake_up(&audio->write_wait);
 		msm_adsp_disable(audio->audplay);
 		audpp_disable(audio->dec_id, audio);
-		rc = audmgr_disable(&audio->audmgr);
-		if (rc < 0)
-			msm_adsp_dump(audio->audplay);
+		audmgr_disable(&audio->audmgr);
 		audio->out_needed = 0;
 		rmt_put_resource(audio);
 		audio->rmt_resource_released = 1;
@@ -744,7 +740,7 @@ static int audlpa_ion_add(struct audio *audio,
 		pr_err("%s: could not get flags for the handle\n", __func__);
 		goto flag_error;
 	}
-	kvaddr = (unsigned long)ion_map_kernel(audio->client, handle, ionflag);
+	kvaddr = (unsigned long)ion_map_kernel(audio->client, handle);
 	if (IS_ERR_OR_NULL((void *)kvaddr)) {
 		pr_err("%s: could not get virtual address\n", __func__);
 		goto map_error;
@@ -929,7 +925,6 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (cmd == AUDIO_GET_STATS) {
 		struct msm_audio_stats stats;
-		memset(&stats, 0, sizeof(stats));
 		stats.byte_count = audpp_avsync_byte_count(audio->dec_id);
 		stats.sample_count = audpp_avsync_sample_count(audio->dec_id);
 		if (copy_to_user((void *) arg, &stats, sizeof(stats)))
@@ -1041,7 +1036,6 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	}
 	case AUDIO_GET_CONFIG: {
 		struct msm_audio_config config;
-		memset(&config, 0, sizeof(config));
 		config.buffer_count = audio->buffer_count;
 		config.buffer_size = audio->buffer_size;
 		config.sample_rate = audio->out_sample_rate;

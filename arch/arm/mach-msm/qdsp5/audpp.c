@@ -4,7 +4,7 @@
  * common code to deal with the AUDPP dsp task (audio postproc)
  *
  * Copyright (C) 2008 Google, Inc.
- * Copyright (c) 2009-2010, 2012-2013 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2010, 2012 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,8 +34,6 @@
 
 #include <mach/qdsp5/qdsp5audppcmdi.h>
 #include <mach/qdsp5/qdsp5audppmsg.h>
-#include <mach/qdsp5/qdsp5audpp.h>
-#include <mach/qdsp5v2/audio_acdbi.h>
 #include <mach/debug_mm.h>
 
 #include "evlog.h"
@@ -87,7 +85,19 @@ static DEFINE_MUTEX(audpp_dec_lock);
 #define AUDPP_CMD_IIR_FLAG_DIS	  0x0000
 #define AUDPP_CMD_IIR_FLAG_ENA	  -1
 
-#define MAX_EVENT_CALLBACK_CLIENTS	2
+#define AUDPP_CMD_VOLUME_PAN		0
+#define AUDPP_CMD_IIR_TUNING_FILTER	1
+#define AUDPP_CMD_EQUALIZER		2
+#define AUDPP_CMD_ADRC			3
+#define AUDPP_CMD_SPECTROGRAM		4
+#define AUDPP_CMD_QCONCERT		5
+#define AUDPP_CMD_SIDECHAIN_TUNING_FILTER	6
+#define AUDPP_CMD_SAMPLING_FREQUENCY	7
+#define AUDPP_CMD_QAFX			8
+#define AUDPP_CMD_QRUMBLE		9
+#define AUDPP_CMD_MBADRC		10
+
+#define MAX_EVENT_CALLBACK_CLIENTS 	1
 
 #define AUDPP_CONCURRENCY_DEFAULT 6	/* All non tunnel mode */
 #define AUDPP_MAX_DECODER_CNT 5
@@ -176,15 +186,12 @@ int audpp_register_event_callback(struct audpp_event_callback *ecb)
 	struct audpp_state *audpp = &the_audpp_state;
 	int i;
 
-	mutex_lock(audpp->lock);
 	for (i = 0; i < MAX_EVENT_CALLBACK_CLIENTS; ++i) {
 		if (NULL == audpp->cb_tbl[i]) {
 			audpp->cb_tbl[i] = ecb;
-			mutex_unlock(audpp->lock);
 			return 0;
 		}
 	}
-	mutex_unlock(audpp->lock);
 	return -1;
 }
 EXPORT_SYMBOL(audpp_register_event_callback);
@@ -194,15 +201,12 @@ int audpp_unregister_event_callback(struct audpp_event_callback *ecb)
 	struct audpp_state *audpp = &the_audpp_state;
 	int i;
 
-	mutex_lock(audpp->lock);
 	for (i = 0; i < MAX_EVENT_CALLBACK_CLIENTS; ++i) {
 		if (ecb == audpp->cb_tbl[i]) {
 			audpp->cb_tbl[i] = NULL;
-			mutex_unlock(audpp->lock);
 			return 0;
 		}
 	}
-	mutex_unlock(audpp->lock);
 	return -1;
 }
 EXPORT_SYMBOL(audpp_unregister_event_callback);
@@ -211,13 +215,9 @@ static void audpp_broadcast(struct audpp_state *audpp, unsigned id,
 			    uint16_t *msg)
 {
 	unsigned n;
-
-	if ((id != AUDPP_MSG_PP_DISABLE_FEEDBACK) &&
-		(id != AUDPP_MSG_PP_FEATS_RE_ENABLE)) {
-		for (n = 0; n < AUDPP_CLNT_MAX_COUNT; n++) {
-			if (audpp->func[n])
-				audpp->func[n] (audpp->private[n], id, msg);
-		}
+	for (n = 0; n < AUDPP_CLNT_MAX_COUNT; n++) {
+		if (audpp->func[n])
+			audpp->func[n] (audpp->private[n], id, msg);
 	}
 
 	for (n = 0; n < MAX_EVENT_CALLBACK_CLIENTS; ++n)
@@ -302,7 +302,6 @@ static void audpp_dsp_event(void *data, unsigned id, size_t len,
 			MM_INFO("ENABLE\n");
 			if (!audpp->enabled) {
 				audpp->enabled = 1;
-				wake_up(&audpp->event_wait);
 				audpp_broadcast(audpp, id, msg);
 			} else {
 				cid = msg[1];
@@ -336,19 +335,6 @@ static void audpp_dsp_event(void *data, unsigned id, size_t len,
 	case ADSP_MESSAGE_ID:
 		MM_DBG("Received ADSP event: module enable/disable(audpptask)");
 		break;
-	case AUDPP_MSG_FEAT_QUERY_DM_DONE:
-		MM_INFO(" RTC ACK --> %x %x %x\n", msg[0],\
-			msg[1], msg[2]);
-		acdb_rtc_set_err(msg[2]);
-		break;
-	case AUDPP_MSG_PP_DISABLE_FEEDBACK:
-		MM_DBG("PP Disable feedback due to mips limitation");
-		audpp_broadcast(audpp, id, msg);
-		break;
-	case AUDPP_MSG_PP_FEATS_RE_ENABLE:
-		MM_DBG("Re-enable the disabled PP features");
-		audpp_broadcast(audpp, id, msg);
-		break;
 	default:
 		MM_ERR("unhandled msg id %x\n", id);
 	}
@@ -363,7 +349,6 @@ int audpp_enable(int id, audpp_event_func func, void *private)
 	struct audpp_state *audpp = &the_audpp_state;
 	uint16_t msg[8];
 	int res = 0;
-	int rc;
 
 	if (id < -1 || id > 4)
 		return -EINVAL;
@@ -394,11 +379,6 @@ int audpp_enable(int id, audpp_event_func func, void *private)
 		LOG(EV_ENABLE, 2);
 		msm_adsp_enable(audpp->mod);
 		audpp_dsp_config(1);
-		rc = wait_event_timeout(audpp->event_wait,
-					(audpp->enabled == 1),
-					3 * HZ);
-		if (rc == 0)
-			msm_adsp_dump(audpp->mod);
 	} else {
 		if (audpp->enabled) {
 			msg[0] = AUDPP_MSG_ENA_ENA;
@@ -449,18 +429,13 @@ void audpp_disable(int id, void *private)
 		MM_DBG("disable\n");
 		LOG(EV_DISABLE, 2);
 		audpp_dsp_config(0);
-		rc = wait_event_timeout(audpp->event_wait,
-					(audpp->enabled == 0),
-					3 * HZ);
+		rc = wait_event_interruptible(audpp->event_wait,
+				(audpp->enabled == 0));
 		if (audpp->enabled == 0)
 			MM_INFO("Received CFG_MSG_DISABLE from ADSP\n");
-		else {
+		else
 			MM_ERR("Didn't receive CFG_MSG DISABLE \
 					message from ADSP\n");
-			if (rc == 0)
-				msm_adsp_dump(audpp->mod);
-		}
-		audpp->enabled = 0;
 		msm_adsp_disable(audpp->mod);
 		msm_adsp_put(audpp->mod);
 		audpp->mod = NULL;

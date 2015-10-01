@@ -66,8 +66,6 @@
 #include <asm/mwait.h>
 #include <asm/apic.h>
 #include <asm/io_apic.h>
-#include <asm/i387.h>
-#include <asm/fpu-internal.h>
 #include <asm/setup.h>
 #include <asm/uv/uv.h>
 #include <linux/mc146818rtc.h>
@@ -271,13 +269,6 @@ notrace static void __cpuinit start_secondary(void *unused)
 	check_tsc_sync_target();
 
 	/*
-	 * Enable the espfix hack for this CPU
-	 */
-#ifdef CONFIG_X86_ESPFIX64
-	init_espfix_ap();
-#endif
-
-	/*
 	 * We need to hold call_lock, so there is no inconsistency
 	 * between the time smp_call_function() determines number of
 	 * IPI recipients, and the time when the determination is made
@@ -407,8 +398,7 @@ const struct cpumask *cpu_coregroup_mask(int cpu)
 	 * For perf, we return last level cache shared map.
 	 * And for power savings, we return cpu_core_map
 	 */
-	if ((sched_mc_power_savings || sched_smt_power_savings) &&
-	    !(cpu_has(c, X86_FEATURE_AMD_DCM)))
+	if (!(cpu_has(c, X86_FEATURE_AMD_DCM)))
 		return cpu_core_mask(cpu);
 	else
 		return cpu_llc_shared_mask(cpu);
@@ -429,7 +419,7 @@ static void impress_friends(void)
 		"Total of %d processors activated (%lu.%02lu BogoMIPS).\n",
 		num_online_cpus(),
 		bogosum/(500000/HZ),
-		(bogosum * 10/(50000/HZ))%100);
+		(bogosum/(5000/HZ))%100);
 
 	pr_debug("Before bogocount - setting activated=1.\n");
 }
@@ -860,9 +850,6 @@ int __cpuinit native_cpu_up(unsigned int cpu)
 
 	per_cpu(cpu_state, cpu) = CPU_UP_PREPARE;
 
-	/* the FPU context is blank, nobody can own it */
-	__cpu_disable_lazy_restore(cpu);
-
 	err = do_boot_cpu(apicid, cpu);
 	if (err) {
 		pr_debug("do_boot_cpu failed %d\n", err);
@@ -1248,9 +1235,6 @@ static void remove_siblinginfo(int cpu)
 
 	for_each_cpu(sibling, cpu_sibling_mask(cpu))
 		cpumask_clear_cpu(cpu, cpu_sibling_mask(sibling));
-	for_each_cpu(sibling, cpu_llc_shared_mask(cpu))
-		cpumask_clear_cpu(cpu, cpu_llc_shared_mask(sibling));
-	cpumask_clear(cpu_llc_shared_mask(cpu));
 	cpumask_clear(cpu_sibling_mask(cpu));
 	cpumask_clear(cpu_core_mask(cpu));
 	c->phys_proc_id = 0;

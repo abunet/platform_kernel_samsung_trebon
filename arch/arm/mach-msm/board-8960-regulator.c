@@ -14,6 +14,7 @@
 #include <linux/regulator/pm8xxx-regulator.h>
 #include <linux/regulator/msm-gpio-regulator.h>
 #include <mach/rpm-regulator.h>
+#include <mach/socinfo.h>
 
 #include "board-8960.h"
 
@@ -30,6 +31,7 @@ VREG_CONSUMERS(L1) = {
 VREG_CONSUMERS(L2) = {
 	REGULATOR_SUPPLY("8921_l2",		NULL),
 	REGULATOR_SUPPLY("dsi_vdda",		"mipi_dsi.1"),
+	REGULATOR_SUPPLY("dsi_pll_vdda",	"mdp.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.0"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.1"),
 	REGULATOR_SUPPLY("mipi_csi_vdd",	"msm_csid.2"),
@@ -115,6 +117,7 @@ VREG_CONSUMERS(L22) = {
 VREG_CONSUMERS(L23) = {
 	REGULATOR_SUPPLY("8921_l23",		NULL),
 	REGULATOR_SUPPLY("dsi_vddio",		"mipi_dsi.1"),
+	REGULATOR_SUPPLY("dsi_pll_vddio",	"mdp.0"),
 	REGULATOR_SUPPLY("hdmi_avdd",		"hdmi_msm.0"),
 	REGULATOR_SUPPLY("pll_vdd",		"pil_riva"),
 	REGULATOR_SUPPLY("pll_vdd",		"pil_qdsp6v4.1"),
@@ -182,10 +185,12 @@ VREG_CONSUMERS(S4) = {
 VREG_CONSUMERS(S5) = {
 	REGULATOR_SUPPLY("8921_s5",		NULL),
 	REGULATOR_SUPPLY("krait0",		"acpuclk-8960"),
+	REGULATOR_SUPPLY("krait0",		"acpuclk-8960ab"),
 };
 VREG_CONSUMERS(S6) = {
 	REGULATOR_SUPPLY("8921_s6",		NULL),
 	REGULATOR_SUPPLY("krait1",		"acpuclk-8960"),
+	REGULATOR_SUPPLY("krait1",		"acpuclk-8960ab"),
 };
 VREG_CONSUMERS(S7) = {
 	REGULATOR_SUPPLY("8921_s7",		NULL),
@@ -217,9 +222,16 @@ VREG_CONSUMERS(LVS5) = {
 	REGULATOR_SUPPLY("cam_vio",		"4-0020"),
 	REGULATOR_SUPPLY("cam_vio",		"4-0034"),
 };
+/* This mapping is used for CDP only. */
+VREG_CONSUMERS(CDP_LVS6) = {
+	REGULATOR_SUPPLY("8921_lvs6",		NULL),
+	REGULATOR_SUPPLY("vdd-io",		"spi0.0"),
+};
+/* This mapping is used for non-CDP targets only. */
 VREG_CONSUMERS(LVS6) = {
 	REGULATOR_SUPPLY("8921_lvs6",		NULL),
-	REGULATOR_SUPPLY("vdd_io",		"spi0.0"),
+	REGULATOR_SUPPLY("vdd-io",		"spi0.0"),
+	REGULATOR_SUPPLY("vdd-phy",		"spi0.0"),
 };
 VREG_CONSUMERS(LVS7) = {
 	REGULATOR_SUPPLY("8921_lvs7",		NULL),
@@ -239,7 +251,7 @@ VREG_CONSUMERS(EXT_5V) = {
 };
 VREG_CONSUMERS(EXT_L2) = {
 	REGULATOR_SUPPLY("ext_l2",		NULL),
-	REGULATOR_SUPPLY("vdd_phy",		"spi0.0"),
+	REGULATOR_SUPPLY("vdd-phy",		"spi0.0"),
 };
 VREG_CONSUMERS(EXT_3P3V) = {
 	REGULATOR_SUPPLY("ext_3p3v",		NULL),
@@ -367,7 +379,8 @@ VREG_CONSUMERS(EXT_OTG_SW) = {
 	{ \
 		.constraints = { \
 			.name		= _name, \
-			.valid_ops_mask	= REGULATOR_CHANGE_VOLTAGE, \
+			.valid_ops_mask	= REGULATOR_CHANGE_VOLTAGE | \
+					  REGULATOR_CHANGE_STATUS, \
 			.min_uV		= _min_uV, \
 			.max_uV		= _max_uV, \
 		}, \
@@ -581,6 +594,17 @@ static struct rpm_regulator_consumer_mapping
 	RPM_REG_MAP(S8,  0, 1, "krait0_s8",  "acpuclk-8960"),
 	RPM_REG_MAP(S8,  0, 2, "krait1_s8",  "acpuclk-8960"),
 	RPM_REG_MAP(S8,  0, 6, "l2_s8",      "acpuclk-8960"),
+
+	RPM_REG_MAP(L23, 0, 1, "krait0_l23", "acpuclk-8960ab"),
+	RPM_REG_MAP(L23, 0, 2, "krait1_l23", "acpuclk-8960ab"),
+	RPM_REG_MAP(L23, 0, 6, "l2_l23",     "acpuclk-8960ab"),
+	RPM_REG_MAP(L24, 0, 1, "krait0_mem", "acpuclk-8960ab"),
+	RPM_REG_MAP(L24, 0, 2, "krait1_mem", "acpuclk-8960ab"),
+	RPM_REG_MAP(S3,  0, 1, "krait0_dig", "acpuclk-8960ab"),
+	RPM_REG_MAP(S3,  0, 2, "krait1_dig", "acpuclk-8960ab"),
+	RPM_REG_MAP(S8,  0, 1, "krait0_s8",  "acpuclk-8960ab"),
+	RPM_REG_MAP(S8,  0, 2, "krait1_s8",  "acpuclk-8960ab"),
+	RPM_REG_MAP(S8,  0, 6, "l2_s8",      "acpuclk-8960ab"),
 };
 
 struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata = {
@@ -592,3 +616,26 @@ struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata = {
 	.consumer_map		= msm_rpm_regulator_consumer_mapping,
 	.consumer_map_len = ARRAY_SIZE(msm_rpm_regulator_consumer_mapping),
 };
+
+/*
+ * Fix up regulator consumer data that moves to a different regulator based on
+ * the current target.
+ */
+void __init configure_msm8960_power_grid(void)
+{
+	static struct rpm_regulator_init_data *rpm_data;
+	int i;
+
+	if (machine_is_msm8960_cdp()) {
+		/* Only modify LVS6 consumers for CDP targets. */
+		for (i = 0; i < ARRAY_SIZE(msm_rpm_regulator_init_data); i++) {
+			rpm_data = &msm_rpm_regulator_init_data[i];
+			if (rpm_data->id == RPM_VREG_ID_PM8921_LVS6) {
+				rpm_data->init_data.consumer_supplies
+					= vreg_consumers_CDP_LVS6;
+				rpm_data->init_data.num_consumer_supplies
+					= ARRAY_SIZE(vreg_consumers_CDP_LVS6);
+			}
+		}
+	}
+}

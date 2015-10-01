@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -108,6 +108,7 @@ enum battery_type {
 	BATT_UNKNOWN = 0,
 	BATT_PALLADIUM,
 	BATT_DESAY,
+	BATT_LGE,
 };
 
 /**
@@ -116,7 +117,8 @@ enum battery_type {
  * @r_sense:		sense resistor value in (mOhms)
  * @i_test:		current at which the unusable charger cutoff is to be
  *			calculated or the peak system current (mA)
- * @v_failure:		the voltage at which the battery is considered empty(mV)
+ * @v_cutoff:		the loaded voltage at which the battery
+ *			is considered empty(mV)
  * @enable_fcc_learning:	if set the driver will learn full charge
  *				capacity of the battery upon end of charge
  */
@@ -125,15 +127,26 @@ struct pm8921_bms_platform_data {
 	enum battery_type		battery_type;
 	unsigned int			r_sense;
 	unsigned int			i_test;
-	unsigned int			v_failure;
+	unsigned int			v_cutoff;
 	unsigned int			max_voltage_uv;
 	unsigned int			rconn_mohm;
 	int				enable_fcc_learning;
+	int				shutdown_soc_valid_limit;
+	int				ignore_shutdown_soc;
+	int				adjust_soc_low_threshold;
+	int				chg_term_ua;
+	int				eoc_check_soc;
+	int				bms_support_wlc;
+	int				wlc_term_ua;
+	int				wlc_max_voltage_uv;
+	int				(*wlc_is_plugged)(void);
+	int				first_fixed_iavg_ma;
 };
 
 #if defined(CONFIG_PM8921_BMS) || defined(CONFIG_PM8921_BMS_MODULE)
 extern struct pm8921_bms_battery_data  palladium_1500_data;
 extern struct pm8921_bms_battery_data  desay_5200_data;
+extern struct pm8921_bms_battery_data  lge_2100_mako_data;
 /**
  * pm8921_bms_get_vsense_avg - return the voltage across the sense
  *				resitor in microvolts
@@ -207,6 +220,15 @@ int pm8921_bms_get_rbatt(void);
  *					soc stored in a coincell backed register
  */
 void pm8921_bms_invalidate_shutdown_soc(void);
+
+/**
+ * pm8921_bms_cc_uah -	function to get the coulomb counter based charge. Note
+ *			that the coulomb counter are reset when the current
+ *			consumption is low (below 8mA for more than 5 minutes),
+ *			This will lead in a very low coulomb counter charge
+ *			value upon wakeup from sleep.
+ */
+int pm8921_bms_cc_uah(int *cc_uah);
 #else
 static inline int pm8921_bms_get_vsense_avg(int *result)
 {
@@ -244,6 +266,10 @@ static inline int pm8921_bms_get_rbatt(void)
 }
 static inline void pm8921_bms_invalidate_shutdown_soc(void)
 {
+}
+static inline int pm8921_bms_cc_uah(int *cc_uah)
+{
+	return -ENXIO;
 }
 #endif
 

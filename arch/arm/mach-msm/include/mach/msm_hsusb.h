@@ -138,7 +138,6 @@ struct msm_hsusb_gadget_platform_data {
 
 	int self_powered;
 	int is_phy_status_timer_on;
-	bool prop_chg;
 };
 
 struct msm_otg_platform_data {
@@ -190,7 +189,6 @@ struct msm_otg_platform_data {
 	int  (*chg_init)(int init);
 	int (*config_vddcx)(int high);
 	int (*init_vddcx)(int init);
-	int (*chg_connect_type)(void);
 
 	struct pm_qos_request pm_qos_req_dma;
 };
@@ -203,9 +201,5 @@ struct msm_usb_host_platform_data {
 	int  (*vbus_init)(int init);
 	struct clk *ebi1_clk;
 };
-
-int msm_ep_config(struct usb_ep *ep);
-int msm_ep_unconfig(struct usb_ep *ep);
-int msm_data_fifo_config(struct usb_ep *ep, u32 addr, u32 size);
 
 #endif
