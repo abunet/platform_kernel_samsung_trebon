@@ -278,6 +278,10 @@ config FB_MSM_LCDC_TOSHIBA_FWVGA_PT
 	select FB_MSM_LCDC_PANEL
 	default n
 
+config FB_MSM_LCDC_TREBON_HVGA
+	bool
+	select FB_MSM_LCDC_PANEL
+	default n
 config FB_MSM_LCDC_SHARP_WVGA_PT
 	bool
 	select FB_MSM_LCDC_PANEL
@@ -493,6 +497,16 @@ config LGIT_VIDEO_WXGA_CABC
 	help
 	  Enable CABC(Content Apaptive Backlight Control) on LGIT Panel
 	  to reduce power consumption
+config FB_MSM_LCDC_GEIM_HVGA_PANEL
+	depends on FB_MSM_LCDC_HW
+	bool "FB MSM LCDC GEIM HVGA Panel"
+	select FB_MSM_LCDC_GEIM_HVGA
+	default n
+	---help---
+	  Support for LCDC GEIM HVGA (320x480) panel
+	  .
+	  .
+
 
 choice
 	prompt "Secondary LCD Panel"
@@ -709,4 +723,9 @@ config FB_MSM_EBI2_PANEL_DETECT
 if FB_MSM_MDSS
 	source "drivers/video/msm/mdss/Kconfig"
 endif
+config BACKLIGHT_KTD253
+	bool "CONFIG_BACKLIGHT_KTD253"
+	default n
+	help
+	  support for KTD253 backlight IC
 endif

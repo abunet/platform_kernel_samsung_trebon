@@ -81,3 +81,7 @@ obj-$(CONFIG_TOUCHSCREEN_LGE_COMMON)	+= lge_touch_core.o
 obj-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS) += touch_synaptics.o
 obj-$(CONFIG_TOUCHSCREEN_LGE_SYNAPTICS) += touch_synaptics_ds4_fw_upgrade.o
 obj-$(CONFIG_TOUCHSCREEN_ELAN_TF_3K)    += ektf3k.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX) += zinitix_touch.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX_TREBON) += zinitix_touch_trebon.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX_AMAZING)   += zinitix_touch_amazing.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX_GEIM)   += zinitix_touch_geim.o
