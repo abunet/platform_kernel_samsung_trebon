@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -23,14 +23,12 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/percpu.h>
-#include <linux/mm.h>
 
 #include <asm/localtimer.h>
 #include <asm/mach/time.h>
 #include <asm/hardware/gic.h>
 #include <asm/sched_clock.h>
 #include <asm/smp_plat.h>
-#include <asm/user_accessible_timer.h>
 #include <mach/msm_iomap.h>
 #include <mach/irqs.h>
 #include <mach/socinfo.h>
@@ -292,6 +290,8 @@ static int msm_timer_set_next_event(unsigned long cycles,
 
 	clock = clockevent_to_clock(evt);
 	clock_state = &__get_cpu_var(msm_clocks_percpu)[clock->index];
+	if (clock_state->stopped)
+		return 0;
 	now = msm_read_timer_count(clock, LOCAL_TIMER);
 	alarm = now + (cycles << clock->shift);
 	if (clock->flags & MSM_CLOCK_FLAGS_ODD_MATCH_WRITE)
@@ -940,12 +940,11 @@ static u32 notrace msm_read_sched_clock(void)
 	return cs->read(NULL);
 }
 
-static struct delay_timer msm_delay_timer;
-
-static unsigned long msm_read_current_timer(void)
+int read_current_timer(unsigned long *timer_val)
 {
 	struct msm_clock *dgt = &msm_clocks[MSM_CLOCK_DGT];
-	return msm_read_timer_count(dgt, GLOBAL_TIMER);
+	*timer_val = msm_read_timer_count(dgt, GLOBAL_TIMER);
+	return 0;
 }
 
 static void __init msm_sched_clock_init(void)
@@ -965,8 +964,8 @@ int __cpuinit local_timer_setup(struct clock_event_device *evt)
 	if (!smp_processor_id())
 		return 0;
 
-	if (cpu_is_msm8x60() || soc_class_is_msm8960() ||
-	    soc_class_is_apq8064() || soc_class_is_msm8930())
+	if (cpu_is_msm8x60() || cpu_is_msm8960() || cpu_is_apq8064() ||
+	    cpu_is_msm8930() || cpu_is_msm8930aa() || cpu_is_msm8627())
 		__raw_writel(DGT_CLK_CTL_DIV_4, MSM_TMR_BASE + DGT_CLK_CTL);
 
 	if (__get_cpu_var(first_boot)) {
@@ -1021,7 +1020,8 @@ static void __init msm_timer_init(void)
 
 	if (cpu_is_msm7x01() || cpu_is_msm7x25() || cpu_is_msm7x27() ||
 	    cpu_is_msm7x25a() || cpu_is_msm7x27a() || cpu_is_msm7x25aa() ||
-	    cpu_is_msm7x27aa() || cpu_is_msm8625() || cpu_is_msm7x25ab()) {
+	    cpu_is_msm7x27aa() || cpu_is_msm8625() || cpu_is_msm7x25ab() ||
+	    cpu_is_msm8625q()) {
 		dgt->shift = MSM_DGT_SHIFT;
 		dgt->freq = 19200000 >> MSM_DGT_SHIFT;
 		dgt->clockevent.shift = 32 + MSM_DGT_SHIFT;
@@ -1031,7 +1031,7 @@ static void __init msm_timer_init(void)
 		gpt->flags |= MSM_CLOCK_FLAGS_UNSTABLE_COUNT
 			   |  MSM_CLOCK_FLAGS_ODD_MATCH_WRITE
 			   |  MSM_CLOCK_FLAGS_DELAYED_WRITE_POST;
-		if (cpu_is_msm8625()) {
+		if (cpu_is_msm8625() || cpu_is_msm8625q()) {
 			dgt->irq = MSM8625_INT_DEBUG_TIMER_EXP;
 			gpt->irq = MSM8625_INT_GP_TIMER_EXP;
 			global_timer_offset =  MSM_TMR0_BASE - MSM_TMR_BASE;
@@ -1062,19 +1062,18 @@ static void __init msm_timer_init(void)
 		sclk_hz = 32765;
 		gpt->flags |= MSM_CLOCK_FLAGS_UNSTABLE_COUNT;
 		dgt->flags |= MSM_CLOCK_FLAGS_UNSTABLE_COUNT;
-	} else if (soc_class_is_msm8960() || soc_class_is_apq8064() ||
-		   soc_class_is_msm8930()) {
+	} else if (cpu_is_msm8960() || cpu_is_apq8064() || cpu_is_msm8930() ||
+		   cpu_is_msm8930aa() || cpu_is_msm8627()) {
 		global_timer_offset = MSM_TMR0_BASE - MSM_TMR_BASE;
 		dgt->freq = 6750000;
 		__raw_writel(DGT_CLK_CTL_DIV_4, MSM_TMR_BASE + DGT_CLK_CTL);
 		gpt->status_mask = BIT(10);
 		dgt->status_mask = BIT(2);
-		if (!soc_class_is_apq8064()) {
-			gpt->freq = 32765;
-			gpt_hz = 32765;
-			sclk_hz = 32765;
-		}
-		if (!soc_class_is_msm8930() && !cpu_is_msm8960ab()) {
+		gpt->freq = 32765;
+		gpt_hz = 32765;
+		sclk_hz = 32765;
+		if (!cpu_is_msm8930() && !cpu_is_msm8930aa() &&
+		    !cpu_is_msm8627()) {
 			gpt->flags |= MSM_CLOCK_FLAGS_UNSTABLE_COUNT;
 			dgt->flags |= MSM_CLOCK_FLAGS_UNSTABLE_COUNT;
 		}
@@ -1124,9 +1123,10 @@ static void __init msm_timer_init(void)
 			       "failed for %s\n", cs->name);
 
 		ce->irq = clock->irq;
-		if (cpu_is_msm8x60() || cpu_is_msm9615() || cpu_is_msm8625() ||
-		    soc_class_is_msm8960() || soc_class_is_apq8064() ||
-		    soc_class_is_msm8930()) {
+		if (cpu_is_msm8x60() || cpu_is_msm8960() || cpu_is_apq8064() ||
+		    cpu_is_msm8930() || cpu_is_msm8930aa() ||
+		    cpu_is_msm9615() || cpu_is_msm8625() || cpu_is_msm8627() ||
+			cpu_is_msm8625q()) {
 			clock->percpu_evt = alloc_percpu(struct clock_event_device *);
 			if (!clock->percpu_evt) {
 				pr_err("msm_timer_init: memory allocation "
@@ -1164,23 +1164,13 @@ static void __init msm_timer_init(void)
 	}
 	msm_sched_clock_init();
 
-	if (use_user_accessible_timers()) {
-		if (cpu_is_msm8960() || cpu_is_msm8930() || cpu_is_apq8064()) {
-			struct msm_clock *gtclock = &msm_clocks[MSM_CLOCK_GPT];
-			void __iomem *addr = gtclock->regbase +
-				TIMER_COUNT_VAL + global_timer_offset;
-			setup_user_timer_offset(virt_to_phys(addr)&0xfff);
-			set_user_accessible_timer_flag(true);
-		}
-	}
-
+#ifdef ARCH_HAS_READ_CURRENT_TIMER
 	if (is_smp()) {
 		__raw_writel(1,
 			msm_clocks[MSM_CLOCK_DGT].regbase + TIMER_ENABLE);
-		msm_delay_timer.freq = dgt->freq;
-		msm_delay_timer.read_current_timer = &msm_read_current_timer;
-		register_current_timer_delay(&msm_delay_timer);
+		set_delay_fn(read_current_timer_delay_loop);
 	}
+#endif
 
 #ifdef CONFIG_LOCAL_TIMERS
 	local_timer_register(&msm_lt_ops);
