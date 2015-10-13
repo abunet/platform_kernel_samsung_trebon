@@ -2,7 +2,7 @@
  *
  * qcelp 13k audio decoder device
  *
- * Copyright (c) 2008-2009, 2011-2012 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2009, 2011-2013 The Linux Foundation. All rights reserved.
  *
  * This code is based in part on audio_mp3.c, which is
  * Copyright (C) 2008 Google, Inc.
@@ -37,13 +37,14 @@
 #include <linux/slab.h>
 #include <linux/msm_audio.h>
 #include <linux/memory_alloc.h>
-#include <linux/msm_ion.h>
+#include <linux/ion.h>
 
 #include <mach/msm_adsp.h>
 #include <mach/iommu.h>
 #include <mach/iommu_domains.h>
 #include <mach/qdsp5/qdsp5audppcmdi.h>
 #include <mach/qdsp5/qdsp5audppmsg.h>
+#include <mach/qdsp5/qdsp5audpp.h>
 #include <mach/qdsp5/qdsp5audplaycmdi.h>
 #include <mach/qdsp5/qdsp5audplaymsg.h>
 #include <mach/qdsp5/qdsp5rmtcmdi.h>
@@ -250,8 +251,10 @@ static int audqcelp_enable(struct audio *audio)
 		cfg.snd_method = RPC_SND_METHOD_MIDI;
 
 		rc = audmgr_enable(&audio->audmgr, &cfg);
-		if (rc < 0)
+		if (rc < 0) {
+			msm_adsp_dump(audio->audplay);
 			return rc;
+		}
 	}
 
 	if (msm_adsp_enable(audio->audplay)) {
@@ -295,8 +298,11 @@ static int audqcelp_disable(struct audio *audio)
 		wake_up(&audio->read_wait);
 		msm_adsp_disable(audio->audplay);
 		audpp_disable(audio->dec_id, audio);
-		if (audio->pcm_feedback == TUNNEL_MODE_PLAYBACK)
-			audmgr_disable(&audio->audmgr);
+		if (audio->pcm_feedback == TUNNEL_MODE_PLAYBACK) {
+			rc = audmgr_disable(&audio->audmgr);
+			if (rc < 0)
+				msm_adsp_dump(audio->audplay);
+		}
 		audio->out_needed = 0;
 		rmt_put_resource(audio);
 		audio->rmt_resource_released = 1;
@@ -779,6 +785,7 @@ static long audqcelp_ioctl(struct file *file, unsigned int cmd,
 
 	if (cmd == AUDIO_GET_STATS) {
 		struct msm_audio_stats stats;
+		memset(&stats, 0, sizeof(stats));
 		stats.byte_count = audpp_avsync_byte_count(audio->dec_id);
 		stats.sample_count = audpp_avsync_sample_count(audio->dec_id);
 		if (copy_to_user((void *)arg, &stats, sizeof(stats)))
@@ -966,7 +973,7 @@ static long audqcelp_ioctl(struct file *file, unsigned int cmd,
 				handle = ion_alloc(audio->client,
 					(config.buffer_size *
 					config.buffer_count),
-					SZ_4K, ION_HEAP(ION_AUDIO_HEAP_ID), 0);
+					SZ_4K, ION_HEAP(ION_AUDIO_HEAP_ID));
 				if (IS_ERR_OR_NULL(handle)) {
 					MM_ERR("Unable to alloc I/P buffs\n");
 					audio->input_buff_handle = NULL;
@@ -1003,7 +1010,8 @@ static long audqcelp_ioctl(struct file *file, unsigned int cmd,
 					break;
 				}
 				audio->map_v_read = ion_map_kernel(
-					audio->client, handle);
+					audio->client,
+					handle, ionflag);
 				if (IS_ERR(audio->map_v_read)) {
 					MM_ERR("failed to map read buf\n");
 					ion_free(audio->client, handle);
@@ -1523,7 +1531,7 @@ static int audqcelp_open(struct inode *inode, struct file *file)
 	audio->client = client;
 
 	handle = ion_alloc(client, mem_sz, SZ_4K,
-		ION_HEAP(ION_AUDIO_HEAP_ID), 0);
+		ION_HEAP(ION_AUDIO_HEAP_ID));
 	if (IS_ERR_OR_NULL(handle)) {
 		MM_ERR("Unable to create allocate O/P buffers\n");
 		rc = -ENOMEM;
@@ -1549,7 +1557,7 @@ static int audqcelp_open(struct inode *inode, struct file *file)
 		goto output_buff_get_flags_error;
 	}
 
-	audio->map_v_write = ion_map_kernel(client, handle);
+	audio->map_v_write = ion_map_kernel(client, handle, ionflag);
 	if (IS_ERR(audio->map_v_write)) {
 		MM_ERR("could not map write buffers\n");
 		rc = -ENOMEM;

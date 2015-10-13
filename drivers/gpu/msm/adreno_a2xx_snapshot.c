@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,11 +38,11 @@ static int a2xx_snapshot_sxdebug(struct kgsl_device *device, void *snapshot,
 	header->size = SXDEBUG_COUNT;
 
 	for (i = 0; i < SXDEBUG_COUNT; i++) {
-		kgsl_regwrite(device, REG_RBBM_DEBUG_CNTL, 0x1B00 | i);
-		kgsl_regread(device, REG_RBBM_DEBUG_OUT, &data[i]);
+		adreno_regwrite(device, REG_RBBM_DEBUG_CNTL, 0x1B00 | i);
+		adreno_regread(device, REG_RBBM_DEBUG_OUT, &data[i]);
 	}
 
-	kgsl_regwrite(device, REG_RBBM_DEBUG_CNTL, 0);
+	adreno_regwrite(device, REG_RBBM_DEBUG_CNTL, 0);
 
 	return DEBUG_SECTION_SZ(SXDEBUG_COUNT);
 }
@@ -65,11 +65,11 @@ static int a2xx_snapshot_cpdebug(struct kgsl_device *device, void *snapshot,
 	header->size = CPDEBUG_COUNT;
 
 	for (i = 0; i < CPDEBUG_COUNT; i++) {
-		kgsl_regwrite(device, REG_RBBM_DEBUG_CNTL, 0x1628);
-		kgsl_regread(device, REG_RBBM_DEBUG_OUT, &data[i]);
+		adreno_regwrite(device, REG_RBBM_DEBUG_CNTL, 0x1628);
+		adreno_regread(device, REG_RBBM_DEBUG_OUT, &data[i]);
 	}
 
-	kgsl_regwrite(device, REG_RBBM_DEBUG_CNTL, 0);
+	adreno_regwrite(device, REG_RBBM_DEBUG_CNTL, 0);
 
 	return DEBUG_SECTION_SZ(CPDEBUG_COUNT);
 }
@@ -82,8 +82,7 @@ static int a2xx_snapshot_cpdebug(struct kgsl_device *device, void *snapshot,
 
 #define SQ_DEBUG_WRITE(_device, _reg, _data, _offset) \
 	do { _data[(_offset)++] = (_reg); \
-		kgsl_regread(_device, (_reg), &_data[(_offset)++]);	\
-	} while (0)
+	adreno_regread(_device, (_reg), &_data[(_offset)++]); } while (0)
 
 #define SQ_DEBUG_BANK_SIZE 23
 
@@ -176,7 +175,7 @@ static int a2xx_snapshot_sqthreaddebug(struct kgsl_device *device,
 	header->size = size;
 
 	for (i = 0; i < 16; i++) {
-		kgsl_regwrite(device, REG_SQ_DEBUG_TB_STATUS_SEL,
+		adreno_regwrite(device, REG_SQ_DEBUG_TB_STATUS_SEL,
 				i | (6<<4) | (i<<7) | (1<<11) | (1<<12)
 				| (i<<16) | (6<<20) | (i<<23));
 		SQ_DEBUG_WRITE(device, REG_SQ_DEBUG_VTX_TB_STATE_MEM,
@@ -216,38 +215,13 @@ static int a2xx_snapshot_miudebug(struct kgsl_device *device, void *snapshot,
 	header->size = MIUDEBUG_COUNT;
 
 	for (i = 0; i < MIUDEBUG_COUNT; i++) {
-		kgsl_regwrite(device, REG_RBBM_DEBUG_CNTL, 0x1600 | i);
-		kgsl_regread(device, REG_RBBM_DEBUG_OUT, &data[i]);
+		adreno_regwrite(device, REG_RBBM_DEBUG_CNTL, 0x1600 | i);
+		adreno_regread(device, REG_RBBM_DEBUG_OUT, &data[i]);
 	}
 
-	kgsl_regwrite(device, REG_RBBM_DEBUG_CNTL, 0);
+	adreno_regwrite(device, REG_RBBM_DEBUG_CNTL, 0);
 
 	return DEBUG_SECTION_SZ(MIUDEBUG_COUNT);
-}
-
-/* Snapshot the istore memory */
-static int a2xx_snapshot_istore(struct kgsl_device *device, void *snapshot,
-	int remain, void *priv)
-{
-	struct kgsl_snapshot_istore *header = snapshot;
-	unsigned int *data = snapshot + sizeof(*header);
-	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
-	int count, i;
-
-	count = adreno_dev->istore_size * adreno_dev->instruction_size;
-
-	if (remain < (count * 4) + sizeof(*header)) {
-		KGSL_DRV_ERR(device,
-			"snapshot: Not enough memory for the istore section");
-		return 0;
-	}
-
-	header->count = adreno_dev->istore_size;
-
-	for (i = 0; i < count; i++)
-		kgsl_regread(device, ADRENO_ISTORE_START + i, &data[i]);
-
-	return (count * 4) + sizeof(*header);
 }
 
 /* A2XX GPU snapshot function - this is where all of the A2XX specific
@@ -258,7 +232,6 @@ void *a2xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
 	int *remain, int hang)
 {
 	struct kgsl_device *device = &adreno_dev->dev;
-	struct kgsl_snapshot_registers_list list;
 	struct kgsl_snapshot_registers regs;
 	unsigned int pmoverride;
 
@@ -275,13 +248,10 @@ void *a2xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
 		regs.count = a225_registers_count;
 	}
 
-	list.registers = &regs;
-	list.count = 1;
-
 	/* Master set of (non debug) registers */
 	snapshot = kgsl_snapshot_add_section(device,
 		KGSL_SNAPSHOT_SECTION_REGS, snapshot, remain,
-		kgsl_snapshot_dump_regs, &list);
+		kgsl_snapshot_dump_regs, &regs);
 
 	/* CP_STATE_DEBUG indexed registers */
 	snapshot = kgsl_snapshot_indexed_registers(device, snapshot,
@@ -298,8 +268,8 @@ void *a2xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
 	 * work
 	 */
 
-	kgsl_regread(device, REG_RBBM_PM_OVERRIDE2, &pmoverride);
-	kgsl_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0xFF);
+	adreno_regread(device, REG_RBBM_PM_OVERRIDE2, &pmoverride);
+	adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, 0xFF);
 
 	/* SX debug registers */
 	snapshot = kgsl_snapshot_add_section(device,
@@ -364,20 +334,8 @@ void *a2xx_snapshot(struct adreno_device *adreno_dev, void *snapshot,
 		}
 	}
 
-	/*
-	 * Only dump the istore on a hang - reading it on a running system
-	 * has a non zero chance of hanging the GPU.
-	 */
-
-	if (adreno_is_a2xx(adreno_dev) && hang) {
-		snapshot = kgsl_snapshot_add_section(device,
-			KGSL_SNAPSHOT_SECTION_ISTORE, snapshot, remain,
-			a2xx_snapshot_istore, NULL);
-	}
-
-
 	/* Reset the clock gating */
-	kgsl_regwrite(device, REG_RBBM_PM_OVERRIDE2, pmoverride);
+	adreno_regwrite(device, REG_RBBM_PM_OVERRIDE2, pmoverride);
 
 	return snapshot;
 }

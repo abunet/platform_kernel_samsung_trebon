@@ -34,15 +34,6 @@
 
 #include "peripheral-loader.h"
 
-/**
- * proxy_timeout - Override for proxy vote timeouts
- * -1: Use driver-specified timeout
- *  0: Hold proxy votes until shutdown
- * >0: Specify a custom timeout in ms
- */
-static int proxy_timeout_ms = -1;
-module_param(proxy_timeout_ms, int, S_IRUGO | S_IWUSR);
-
 enum pil_state {
 	PIL_OFFLINE,
 	PIL_ONLINE,
@@ -136,10 +127,7 @@ static int pil_proxy_vote(struct pil_device *pil)
 
 static void pil_proxy_unvote(struct pil_device *pil, unsigned long timeout)
 {
-	if (proxy_timeout_ms >= 0)
-		timeout = proxy_timeout_ms;
-
-	if (timeout && pil->desc->ops->proxy_unvote)
+	if (pil->desc->ops->proxy_unvote)
 		schedule_delayed_work(&pil->proxy, msecs_to_jiffies(timeout));
 }
 
@@ -405,11 +393,7 @@ EXPORT_SYMBOL(pil_get);
 static void pil_shutdown(struct pil_device *pil)
 {
 	pil->desc->ops->shutdown(pil->desc);
-	if (proxy_timeout_ms == 0 && pil->desc->ops->proxy_unvote)
-		pil->desc->ops->proxy_unvote(pil->desc);
-	else
-		flush_delayed_work(&pil->proxy);
-
+	flush_delayed_work(&pil->proxy);
 	pil_set_state(pil, PIL_OFFLINE);
 }
 
@@ -580,6 +564,18 @@ static void __exit msm_pil_debugfs_exit(void) { return 0; };
 static int msm_pil_debugfs_add(struct pil_device *pil) { return 0; }
 static void msm_pil_debugfs_remove(struct pil_device *pil) { }
 #endif
+
+static int __msm_pil_shutdown(struct device *dev, void *data)
+{
+	pil_shutdown(to_pil_device(dev));
+	return 0;
+}
+
+static int msm_pil_shutdown_at_boot(void)
+{
+	return bus_for_each_dev(&pil_bus_type, NULL, NULL, __msm_pil_shutdown);
+}
+late_initcall(msm_pil_shutdown_at_boot);
 
 static void pil_device_release(struct device *dev)
 {

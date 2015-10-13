@@ -20,16 +20,12 @@
 
 #include <linux/types.h>
 #include <linux/msm_adsp.h>
-#include <linux/msm_ion.h>
 #include <mach/msm_rpcrouter.h>
 #include <mach/msm_adsp.h>
 
 int adsp_pmem_fixup(struct msm_adsp_module *module, void **addr,
 		    unsigned long len);
-int adsp_ion_do_cache_op(struct msm_adsp_module *module, void *addr,
-			void *paddr, unsigned long len,
-			unsigned long offset, int cmd);
-int adsp_ion_fixup_kvaddr(struct msm_adsp_module *module, void **addr,
+int adsp_pmem_fixup_kvaddr(struct msm_adsp_module *module, void **addr,
 			   unsigned long *kvaddr, unsigned long len,
 			   struct file **filp, unsigned long *offset);
 int adsp_pmem_paddr_fixup(struct msm_adsp_module *module, void **addr);
@@ -152,6 +148,7 @@ enum {
 	RPC_ADSP_RTOS_CMD_SET_STATE,
 	RPC_ADSP_RTOS_CMD_REMOTE_INIT_INFO_EVENT,
 	RPC_ADSP_RTOS_CMD_GET_INIT_INFO,
+	RPC_ADSP_RTOS_CMD_CORE_DUMP,
 };
 
 enum rpc_adsp_rtos_mod_status_type {
@@ -280,8 +277,8 @@ struct msm_adsp_module {
 	struct clk *clk;
 	int open_count;
 
-	struct mutex ion_regions_lock;
-	struct hlist_head ion_regions;
+	struct mutex pmem_regions_lock;
+	struct hlist_head pmem_regions;
 	int (*verify_cmd) (struct msm_adsp_module*, unsigned int, void *,
 			   size_t);
 	int (*patch_event) (struct msm_adsp_module*, struct adsp_event *);

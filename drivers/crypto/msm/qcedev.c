@@ -572,7 +572,6 @@ static int start_sha_req(struct qcedev_control *podev)
 		if (podev->ce_support.sha_hmac) {
 			sreq.alg = QCE_HASH_SHA1_HMAC;
 			sreq.authkey = &handle->sha_ctxt.authkey[0];
-			sreq.authklen = QCEDEV_MAX_SHA_BLOCK_SIZE;
 
 		} else {
 			sreq.alg = QCE_HASH_SHA1;
@@ -583,7 +582,7 @@ static int start_sha_req(struct qcedev_control *podev)
 		if (podev->ce_support.sha_hmac) {
 			sreq.alg = QCE_HASH_SHA256_HMAC;
 			sreq.authkey = &handle->sha_ctxt.authkey[0];
-			sreq.authklen = QCEDEV_MAX_SHA_BLOCK_SIZE;
+
 		} else {
 			sreq.alg = QCE_HASH_SHA256;
 			sreq.authkey = NULL;
@@ -960,6 +959,7 @@ static int qcedev_sha_final(struct qcedev_async_req *qcedev_areq,
 	uint8_t *k_buf_src = NULL;
 	uint8_t *k_align_src = NULL;
 
+	handle->sha_ctxt.first_blk = 0;
 	handle->sha_ctxt.last_blk = 1;
 
 	total = handle->sha_ctxt.trailing_buf_len;
@@ -977,6 +977,9 @@ static int qcedev_sha_final(struct qcedev_async_req *qcedev_areq,
 							CACHE_LINE_SIZE);
 		memcpy(k_align_src, &handle->sha_ctxt.trailing_buf[0], total);
 	}
+	handle->sha_ctxt.last_blk = 1;
+	handle->sha_ctxt.first_blk = 0;
+
 	qcedev_areq->sha_req.sreq.src = (struct scatterlist *) &sg_src;
 	sg_set_buf(qcedev_areq->sha_req.sreq.src, k_align_src, total);
 	sg_mark_end(qcedev_areq->sha_req.sreq.src);
@@ -1068,7 +1071,6 @@ static int qcedev_set_hmac_auth_key(struct qcedev_async_req *areq,
 	int err = 0;
 
 	if (areq->sha_op_req.authklen <= QCEDEV_MAX_KEY_SIZE) {
-		qcedev_sha_init(areq, handle);
 		/* Verify Source Address */
 		if (!access_ok(VERIFY_READ,
 				(void __user *)areq->sha_op_req.authkey,
@@ -1080,7 +1082,6 @@ static int qcedev_set_hmac_auth_key(struct qcedev_async_req *areq,
 			return -EFAULT;
 	} else {
 		struct qcedev_async_req authkey_areq;
-		uint8_t	authkey[QCEDEV_MAX_SHA_BLOCK_SIZE];
 
 		init_completion(&authkey_areq.complete);
 
@@ -1090,8 +1091,6 @@ static int qcedev_set_hmac_auth_key(struct qcedev_async_req *areq,
 		authkey_areq.sha_op_req.data[0].len = areq->sha_op_req.authklen;
 		authkey_areq.sha_op_req.data_len = areq->sha_op_req.authklen;
 		authkey_areq.sha_op_req.diglen = 0;
-		authkey_areq.handle = handle;
-
 		memset(&authkey_areq.sha_op_req.digest[0], 0,
 						QCEDEV_MAX_SHA_DIGEST);
 		if (areq->sha_op_req.alg == QCEDEV_ALG_SHA1_HMAC)
@@ -1107,11 +1106,8 @@ static int qcedev_set_hmac_auth_key(struct qcedev_async_req *areq,
 			err = qcedev_sha_final(&authkey_areq, handle);
 		else
 			return err;
-		memcpy(&authkey[0], &handle->sha_ctxt.digest[0],
-				handle->sha_ctxt.diglen);
-		qcedev_sha_init(areq, handle);
-
-		memcpy(&handle->sha_ctxt.authkey[0], &authkey[0],
+		memcpy(&handle->sha_ctxt.authkey[0],
+				&handle->sha_ctxt.digest[0],
 				handle->sha_ctxt.diglen);
 	}
 	return err;
@@ -1213,6 +1209,7 @@ static int qcedev_hmac_init(struct qcedev_async_req *areq,
 	int err;
 	struct qcedev_control *podev = handle->cntl;
 
+	qcedev_sha_init(areq, handle);
 	err = qcedev_set_hmac_auth_key(areq, handle);
 	if (err)
 		return err;
@@ -1788,10 +1785,6 @@ static int qcedev_check_cipher_params(struct qcedev_cipher_op_req *req,
 			if (req->use_pmem)
 				goto error;
 		}
-		if (req->byteoffset >= AES_CE_BLOCK_SIZE) {
-			pr_err("%s: Invalid byte offset\n", __func__);
-			goto error;
-		}
 	}
 	/* if using PMEM with non-zero byteoffset, ensure it is in_place_op */
 	if (req->use_pmem) {
@@ -2020,8 +2013,21 @@ static int qcedev_probe(struct platform_device *pdev)
 	struct qcedev_control *podev;
 	struct msm_ce_hw_support *platform_support;
 
-	podev = &qce_dev[0];
+	if (pdev->id >= MAX_QCE_DEVICE) {
+		pr_err("%s: device id %d  exceeds allowed %d\n",
+			__func__, pdev->id, MAX_QCE_DEVICE);
+		return -ENOENT;
+	}
+	podev = &qce_dev[pdev->id];
 
+	platform_support = (struct msm_ce_hw_support *)pdev->dev.platform_data;
+	podev->platform_support.ce_shared = platform_support->ce_shared;
+	podev->platform_support.shared_ce_resource =
+				platform_support->shared_ce_resource;
+	podev->platform_support.hw_key_support =
+				platform_support->hw_key_support;
+	podev->platform_support.bus_scale_table =
+				platform_support->bus_scale_table;
 	podev->ce_lock_count = 0;
 	podev->high_bw_req_count = 0;
 	INIT_LIST_HEAD(&podev->ready_commands);
@@ -2041,39 +2047,22 @@ static int qcedev_probe(struct platform_device *pdev)
 	podev->qce = handle;
 	podev->pdev = pdev;
 	platform_set_drvdata(pdev, podev);
-
-	rc = misc_register(&podev->miscdevice);
 	qce_hw_support(podev->qce, &podev->ce_support);
-	if (podev->ce_support.bam) {
-		podev->platform_support.ce_shared = 0;
-		podev->platform_support.shared_ce_resource = 0;
-		podev->platform_support.hw_key_support = 0;
-		podev->platform_support.bus_scale_table = NULL;
-		podev->platform_support.sha_hmac = 1;
-	} else {
-		platform_support =
-			(struct msm_ce_hw_support *)pdev->dev.platform_data;
-		podev->platform_support.ce_shared = platform_support->ce_shared;
-		podev->platform_support.shared_ce_resource =
-				platform_support->shared_ce_resource;
-		podev->platform_support.hw_key_support =
-				platform_support->hw_key_support;
-		podev->platform_support.bus_scale_table =
-				platform_support->bus_scale_table;
-		podev->platform_support.sha_hmac = platform_support->sha_hmac;
-	}
+
 	if (podev->platform_support.bus_scale_table != NULL) {
 		podev->bus_scale_handle =
 			msm_bus_scale_register_client(
 				(struct msm_bus_scale_pdata *)
 				podev->platform_support.bus_scale_table);
 		if (!podev->bus_scale_handle) {
-			pr_err("%s not able to get bus scale\n",
-				__func__);
+			printk(KERN_ERR "%s not able to get bus scale\n",
+								__func__);
 			rc =  -ENOMEM;
 			goto err;
 		}
 	}
+	rc = misc_register(&podev->miscdevice);
+
 	if (rc >= 0)
 		return 0;
 	else
@@ -2109,19 +2098,12 @@ static int qcedev_remove(struct platform_device *pdev)
 	return 0;
 };
 
-static struct of_device_id qcedev_match[] = {
-	{	.compatible = "qcom,qcedev",
-	},
-	{}
-};
-
 static struct platform_driver qcedev_plat_driver = {
 	.probe = qcedev_probe,
 	.remove = qcedev_remove,
 	.driver = {
 		.name = "qce",
 		.owner = THIS_MODULE,
-		.of_match_table = qcedev_match,
 	},
 };
 
@@ -2238,7 +2220,9 @@ static void qcedev_exit(void)
 }
 
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Mona Hossain <mhossain@codeaurora.org>");
 MODULE_DESCRIPTION("Qualcomm DEV Crypto driver");
+MODULE_VERSION("1.26");
 
 module_init(qcedev_init);
 module_exit(qcedev_exit);

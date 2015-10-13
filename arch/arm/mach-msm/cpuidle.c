@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,6 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/cpuidle.h>
+#include <linux/cpu_pm.h>
 
 #include <mach/cpuidle.h>
 
@@ -67,32 +68,76 @@ static struct msm_cpuidle_state msm_cstates[] = {
 		MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE},
 };
 
+
+#ifdef CONFIG_MSM_SLEEP_STATS
+static DEFINE_PER_CPU(struct atomic_notifier_head, msm_cpuidle_notifiers);
+
+int msm_cpuidle_register_notifier(unsigned int cpu, struct notifier_block *nb)
+{
+	struct atomic_notifier_head *head =
+		&per_cpu(msm_cpuidle_notifiers, cpu);
+
+	return atomic_notifier_chain_register(head, nb);
+}
+EXPORT_SYMBOL(msm_cpuidle_register_notifier);
+
+int msm_cpuidle_unregister_notifier(unsigned int cpu, struct notifier_block *nb)
+{
+	struct atomic_notifier_head *head =
+		&per_cpu(msm_cpuidle_notifiers, cpu);
+
+	return atomic_notifier_chain_unregister(head, nb);
+}
+EXPORT_SYMBOL(msm_cpuidle_unregister_notifier);
+#endif
+
 static int msm_cpuidle_enter(
 	struct cpuidle_device *dev, struct cpuidle_driver *drv, int index)
 {
 	int ret = 0;
-	int i;
+	int i = 0;
 	enum msm_pm_sleep_mode pm_mode;
+	struct cpuidle_state_usage *st_usage = NULL;
+#ifdef CONFIG_MSM_SLEEP_STATS
+	struct atomic_notifier_head *head =
+			&__get_cpu_var(msm_cpuidle_notifiers);
+#endif
 
-	pm_mode = msm_pm_idle_enter(dev, drv, index);
+	local_irq_disable();
 
+#ifdef CONFIG_MSM_SLEEP_STATS
+	atomic_notifier_call_chain(head, MSM_CPUIDLE_STATE_ENTER, NULL);
+#endif
+
+#ifdef CONFIG_CPU_PM
+	cpu_pm_enter();
+#endif
+
+	pm_mode = msm_pm_idle_prepare(dev, drv, index);
+	dev->last_residency = msm_pm_idle_enter(pm_mode);
 	for (i = 0; i < dev->state_count; i++) {
-		struct cpuidle_state_usage *st_usage = &dev->states_usage[i];
-		enum msm_pm_sleep_mode last_mode =
-			(enum msm_pm_sleep_mode)cpuidle_get_statedata(st_usage);
-
-		if (last_mode == pm_mode) {
+		st_usage = &dev->states_usage[i];
+		if ((enum msm_pm_sleep_mode) cpuidle_get_statedata(st_usage)
+		    == pm_mode) {
 			ret = i;
 			break;
 		}
 	}
+
+#ifdef CONFIG_CPU_PM
+	cpu_pm_exit();
+#endif
+
+#ifdef CONFIG_MSM_SLEEP_STATS
+	atomic_notifier_call_chain(head, MSM_CPUIDLE_STATE_EXIT, NULL);
+#endif
 
 	local_irq_enable();
 
 	return ret;
 }
 
-static void __devinit msm_cpuidle_set_states(void)
+static void __init msm_cpuidle_set_states(void)
 {
 	int i = 0;
 	int state_count = 0;
@@ -127,7 +172,7 @@ static void __devinit msm_cpuidle_set_states(void)
 	msm_cpuidle_driver.safe_state_index = 0;
 }
 
-static void __devinit msm_cpuidle_set_cpu_statedata(struct cpuidle_device *dev)
+static void __init msm_cpuidle_set_cpu_statedata(struct cpuidle_device *dev)
 {
 	int i = 0;
 	int state_count = 0;
@@ -148,7 +193,7 @@ static void __devinit msm_cpuidle_set_cpu_statedata(struct cpuidle_device *dev)
 	dev->state_count = state_count; /* Per cpu state count */
 }
 
-int __devinit msm_cpuidle_init(void)
+int __init msm_cpuidle_init(void)
 {
 	unsigned int cpu = 0;
 	int ret = 0;
@@ -174,3 +219,16 @@ int __devinit msm_cpuidle_init(void)
 
 	return 0;
 }
+
+static int __init msm_cpuidle_early_init(void)
+{
+#ifdef CONFIG_MSM_SLEEP_STATS
+	unsigned int cpu;
+
+	for_each_possible_cpu(cpu)
+		ATOMIC_INIT_NOTIFIER_HEAD(&per_cpu(msm_cpuidle_notifiers, cpu));
+#endif
+	return 0;
+}
+
+early_initcall(msm_cpuidle_early_init);

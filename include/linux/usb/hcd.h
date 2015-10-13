@@ -126,8 +126,6 @@ struct usb_hcd {
 	unsigned		wireless:1;	/* Wireless USB HCD */
 	unsigned		authorized_default:1;
 	unsigned		has_tt:1;	/* Integrated TT in root hub */
-	unsigned		broken_pci_sleep:1;	/* Don't put the
-			controller in PCI-D3 for system sleep */
 
 	unsigned int		irq;		/* irq allocated */
 	void __iomem		*regs;		/* device memory/io */
@@ -346,11 +344,12 @@ struct hc_driver {
 	int	(*update_device)(struct usb_hcd *, struct usb_device *);
 	int	(*set_usb2_hw_lpm)(struct usb_hcd *, struct usb_device *, int);
 
-	/* to log submission/completion events*/
-	void	(*log_urb)(struct urb *urb, char *event, unsigned extra);
+	/* to log completion events*/
+	void	(*log_urb_complete)(struct urb *urb, char * event,
+			unsigned extra);
 	void	(*dump_regs)(struct usb_hcd *);
-
-	void	(*reset_sof_bug_handler)(struct usb_hcd *hcd, u32 val);
+	void	(*enable_ulpi_control)(struct usb_hcd *hcd, u32 linestate);
+	void	(*disable_ulpi_control)(struct usb_hcd *hcd);
 };
 
 extern int usb_hcd_link_urb_to_ep(struct usb_hcd *hcd, struct urb *urb);
@@ -411,7 +410,7 @@ extern int usb_hcd_pci_probe(struct pci_dev *dev,
 extern void usb_hcd_pci_remove(struct pci_dev *dev);
 extern void usb_hcd_pci_shutdown(struct pci_dev *dev);
 
-#ifdef CONFIG_PM_SLEEP
+#ifdef CONFIG_PM
 extern const struct dev_pm_ops usb_hcd_pci_pm_ops;
 #endif
 #endif /* CONFIG_PCI */

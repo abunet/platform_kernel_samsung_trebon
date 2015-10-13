@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm 3.4.0-sm Kernel Configuration
+# Linux/arm 3.4.105-sm Kernel Configuration
 #
 CONFIG_ARM=y
 CONFIG_ARM_HAS_SG_CHAIN=y
@@ -327,7 +327,7 @@ CONFIG_ARCH_MSM7X27=y
 # CONFIG_ARCH_MSM9625 is not set
 # CONFIG_MSM_SOC_REV_NONE is not set
 CONFIG_MSM_SOC_REV_A=y
-CONFIG_MSM_SMP=y
+# CONFIG_MSM_SMP is not set
 CONFIG_ARCH_MSM_CORTEXMP=y
 CONFIG_ARCH_MSM_CORTEX_A5=y
 CONFIG_ARCH_MSM7X27A=y

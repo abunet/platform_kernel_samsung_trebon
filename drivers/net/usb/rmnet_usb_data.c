@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,12 +24,6 @@
 
 #define RMNET_DATA_LEN			2000
 #define HEADROOM_FOR_QOS		8
-
-/* net device name prefixes, indexed by driver_info->data */
-static const char * const rmnet_names[] = {
-	"rmnet_usb%d",
-	"rmnet2_usb%d",
-};
 
 static int	data_msg_dbg_mask;
 
@@ -86,56 +80,6 @@ static DEVICE_ATTR(dbg_mask, 0644, dbg_mask_show, dbg_mask_store);
 #define DBG1(x...) DBG(DEBUG_MASK_LVL1, x)
 #define DBG2(x...) DBG(DEBUG_MASK_LVL2, x)
 
-static unsigned int no_rmnet_devs = 1;
-module_param(no_rmnet_devs, uint, S_IRUGO | S_IWUSR);
-
-static unsigned int no_rmnet_insts_per_dev = 4;
-module_param(no_rmnet_insts_per_dev, uint, S_IRUGO | S_IWUSR);
-
-static int rmnet_data_start(void);
-static bool rmnet_data_init;
-
-#if defined(CONFIG_CAP_SENSOR_RMNET_CTL)
-bool rmnet_netdev_cmp(struct net_device *dev)
-{
-	int i;
-	const char *rmnet_name;
-
-	for (i = 0; i < 2; ++i) {
-		rmnet_name = rmnet_names[i];
-		if (0 == strncmp(dev->name, rmnet_name, strlen(rmnet_name)-2))
-			return true;
-	}
-	return false;
-}
-EXPORT_SYMBOL(rmnet_netdev_cmp);
-#endif
-
-static int rmnet_init(const char *val, const struct kernel_param *kp)
-{
-	int ret = 0;
-
-	if (rmnet_data_init) {
-		pr_err("dynamic setting rmnet params currently unsupported\n");
-		return -EINVAL;
-	}
-
-	ret = param_set_bool(val, kp);
-	if (ret)
-		return ret;
-
-	rmnet_data_start();
-
-	return ret;
-}
-
-static struct kernel_param_ops rmnet_init_ops = {
-	.set = rmnet_init,
-	.get = param_get_bool,
-};
-module_param_cb(rmnet_data_init, &rmnet_init_ops, &rmnet_data_init,
-		S_IRUGO | S_IWUSR);
-
 static void rmnet_usb_setup(struct net_device *);
 static int rmnet_ioctl(struct net_device *, struct ifreq *, int);
 
@@ -143,35 +87,73 @@ static int rmnet_usb_suspend(struct usb_interface *iface, pm_message_t message)
 {
 	struct usbnet		*unet;
 	struct rmnet_ctrl_dev	*dev;
+	int			time = 0;
+	int			retval = 0;
 
 	unet = usb_get_intfdata(iface);
+	if (!unet) {
+		pr_err("%s:data device not found\n", __func__);
+		retval = -ENODEV;
+		goto fail;
+	}
 
 	dev = (struct rmnet_ctrl_dev *)unet->data[1];
+	if (!dev) {
+		dev_err(&iface->dev, "%s: ctrl device not found\n",
+				__func__);
+		retval = -ENODEV;
+		goto fail;
+	}
 
-	if (work_busy(&dev->get_encap_work))
-		return -EBUSY;
+	retval = usbnet_suspend(iface, message);
+	if (!retval) {
+		if (message.event & PM_EVENT_SUSPEND) {
+			time = usb_wait_anchor_empty_timeout(&dev->tx_submitted,
+								1000);
+			if (!time)
+				usb_kill_anchored_urbs(&dev->tx_submitted);
 
-	if (usbnet_suspend(iface, message))
-		return -EBUSY;
+			retval = rmnet_usb_ctrl_stop_rx(dev);
+			iface->dev.power.power_state.event = message.event;
+		}
+		/*  TBD : do we need to set/clear usbnet->udev->reset_resume*/
+		} else
+		dev_dbg(&iface->dev,
+			"%s: device is busy can not suspend\n", __func__);
 
-	usb_kill_anchored_urbs(&dev->rx_submitted);
-
-	return 0;
+fail:
+	return retval;
 }
 
 static int rmnet_usb_resume(struct usb_interface *iface)
 {
 	int			retval = 0;
+	int			oldstate;
 	struct usbnet		*unet;
 	struct rmnet_ctrl_dev	*dev;
 
 	unet = usb_get_intfdata(iface);
+	if (!unet) {
+		pr_err("%s:data device not found\n", __func__);
+		retval = -ENODEV;
+		goto fail;
+	}
 
 	dev = (struct rmnet_ctrl_dev *)unet->data[1];
+	if (!dev) {
+		dev_err(&iface->dev, "%s: ctrl device not found\n", __func__);
+		retval = -ENODEV;
+		goto fail;
+	}
+	oldstate = iface->dev.power.power_state.event;
+	iface->dev.power.power_state.event = PM_EVENT_ON;
 
-	usbnet_resume(iface);
-	retval = rmnet_usb_ctrl_start_rx(dev);
-
+	retval = usbnet_resume(iface);
+	if (!retval) {
+		if (oldstate & PM_EVENT_SUSPEND)
+			retval = rmnet_usb_ctrl_start_rx(dev);
+	}
+fail:
 	return retval;
 }
 
@@ -181,7 +163,6 @@ static int rmnet_usb_bind(struct usbnet *usbnet, struct usb_interface *iface)
 	struct usb_host_endpoint	*bulk_in = NULL;
 	struct usb_host_endpoint	*bulk_out = NULL;
 	struct usb_host_endpoint	*int_in = NULL;
-	struct driver_info		*info = usbnet->driver_info;
 	int				status = 0;
 	int				i;
 	int				numends;
@@ -215,7 +196,7 @@ static int rmnet_usb_bind(struct usbnet *usbnet, struct usb_interface *iface)
 	usbnet->status = int_in;
 
 	/*change name of net device to rmnet_usbx here*/
-	strlcpy(usbnet->net->name, rmnet_names[info->data], IFNAMSIZ);
+	strlcpy(usbnet->net->name, "rmnet_usb%d", IFNAMSIZ);
 
 	/*TBD: update rx_urb_size, curently set to eth frame len by usbnet*/
 out:
@@ -523,16 +504,23 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 		const struct usb_device_id *prod)
 {
 	struct usbnet		*unet;
-	struct driver_info	*info = (struct driver_info *)prod->driver_info;
+	struct driver_info	*info;
 	struct usb_device	*udev;
+	unsigned int		iface_num;
+	static int		first_rmnet_iface_num = -EINVAL;
 	int			status = 0;
 
+	iface_num = iface->cur_altsetting->desc.bInterfaceNumber;
 	if (iface->num_altsetting != 1) {
 		dev_err(&iface->dev, "%s invalid num_altsetting %u\n",
 			__func__, iface->num_altsetting);
 		status = -EINVAL;
 		goto out;
 	}
+
+	info = (struct driver_info *)prod->driver_info;
+	if (!test_bit(iface_num, &info->data))
+		return -ENODEV;
 
 	status = usbnet_probe(iface, prod);
 	if (status < 0) {
@@ -552,8 +540,15 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 	if (status)
 		goto out;
 
-	status = rmnet_usb_ctrl_probe(iface, unet->status, info->data,
-		(struct rmnet_ctrl_dev **)&unet->data[1]);
+	if (first_rmnet_iface_num == -EINVAL)
+		first_rmnet_iface_num = iface_num;
+
+	/*save control device intstance */
+	unet->data[1] = (unsigned long)ctrl_dev	\
+			[iface_num - first_rmnet_iface_num];
+
+	status = rmnet_usb_ctrl_probe(iface, unet->status,
+		(struct rmnet_ctrl_dev *)unet->data[1]);
 	if (status)
 		goto out;
 
@@ -565,13 +560,12 @@ static int rmnet_usb_probe(struct usb_interface *iface,
 
 	usb_enable_autosuspend(udev);
 
-	if (udev->parent && !udev->parent->parent) {
-		/* allow modem and roothub to wake up suspended system */
-		device_set_wakeup_enable(&udev->dev, 1);
-		device_set_wakeup_enable(&udev->parent->dev, 1);
+	/* allow modem to wake up suspended system */
+	device_set_wakeup_enable(&udev->dev, 1);
 
-		/* set default autosuspend timeout for modem and roothub */
-		pm_runtime_set_autosuspend_delay(&udev->dev, 2000);
+	/* set default autosuspend timeout for modem and roothub */
+	if (udev->parent && !udev->parent->parent) {
+		pm_runtime_set_autosuspend_delay(&udev->dev, 1000);
 		pm_runtime_set_autosuspend_delay(&udev->parent->dev, 200);
 	}
 
@@ -605,71 +599,53 @@ static void rmnet_usb_disconnect(struct usb_interface *intf)
 	usbnet_disconnect(intf);
 }
 
-static const struct driver_info rmnet_info = {
+/*bit position represents interface number*/
+#define PID9034_IFACE_MASK	0xF0
+#define PID9048_IFACE_MASK	0x1E0
+#define PID904C_IFACE_MASK	0x1C0
+
+static const struct driver_info rmnet_info_pid9034 = {
 	.description   = "RmNET net device",
 	.flags         = FLAG_SEND_ZLP,
 	.bind          = rmnet_usb_bind,
 	.tx_fixup      = rmnet_usb_tx_fixup,
 	.rx_fixup      = rmnet_usb_rx_fixup,
 	.manage_power  = rmnet_usb_manage_power,
-	.data          = 0,
+	.data          = PID9034_IFACE_MASK,
 };
 
-static const struct driver_info rmnet_usb_info = {
+static const struct driver_info rmnet_info_pid9048 = {
 	.description   = "RmNET net device",
 	.flags         = FLAG_SEND_ZLP,
 	.bind          = rmnet_usb_bind,
 	.tx_fixup      = rmnet_usb_tx_fixup,
 	.rx_fixup      = rmnet_usb_rx_fixup,
 	.manage_power  = rmnet_usb_manage_power,
-	.data          = 1,
+	.data          = PID9048_IFACE_MASK,
+};
+
+static const struct driver_info rmnet_info_pid904c = {
+	.description   = "RmNET net device",
+	.flags         = FLAG_SEND_ZLP,
+	.bind          = rmnet_usb_bind,
+	.tx_fixup      = rmnet_usb_tx_fixup,
+	.rx_fixup      = rmnet_usb_rx_fixup,
+	.manage_power  = rmnet_usb_manage_power,
+	.data          = PID904C_IFACE_MASK,
 };
 
 static const struct usb_device_id vidpids[] = {
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9034, 4),
-	.driver_info = (unsigned long)&rmnet_info,
+	{
+		USB_DEVICE(0x05c6, 0x9034), /* MDM9x15*/
+		.driver_info = (unsigned long)&rmnet_info_pid9034,
 	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9034, 5),
-	.driver_info = (unsigned long)&rmnet_info,
+	{
+		USB_DEVICE(0x05c6, 0x9048), /* MDM9x15*/
+		.driver_info = (unsigned long)&rmnet_info_pid9048,
 	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9034, 6),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9034, 7),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9048, 5),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9048, 6),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9048, 7),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9048, 8),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x904c, 6),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x904c, 7),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x904c, 8),
-	.driver_info = (unsigned long)&rmnet_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9079, 5),
-	.driver_info = (unsigned long)&rmnet_usb_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9079, 6),
-	.driver_info = (unsigned long)&rmnet_usb_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9079, 7),
-	.driver_info = (unsigned long)&rmnet_usb_info,
-	},
-	{ USB_DEVICE_INTERFACE_NUMBER(0x05c6, 0x9079, 8),
-	.driver_info = (unsigned long)&rmnet_usb_info,
+	{
+		USB_DEVICE(0x05c6, 0x904c), /* MDM9x15*/
+		.driver_info = (unsigned long)&rmnet_info_pid904c,
 	},
 
 	{ }, /* Terminating entry */
@@ -687,38 +663,31 @@ static struct usb_driver rmnet_usb = {
 	.supports_autosuspend = true,
 };
 
-static int rmnet_data_start(void)
+static int __init rmnet_usb_init(void)
 {
 	int	retval;
-
-	if (no_rmnet_devs > MAX_RMNET_DEVS) {
-		pr_err("ERROR:%s: param no_rmnet_devs(%d) > than maximum(%d)",
-			__func__, no_rmnet_devs, MAX_RMNET_DEVS);
-		return -EINVAL;
-	}
 
 	retval = usb_register(&rmnet_usb);
 	if (retval) {
 		err("usb_register failed: %d", retval);
 		return retval;
 	}
-
-	/* initialize ctrl devices */
-	retval = rmnet_usb_ctrl_init(no_rmnet_devs, no_rmnet_insts_per_dev);
+	/* initialize rmnet ctrl device here*/
+	retval = rmnet_usb_ctrl_init();
 	if (retval) {
-		rmnet_usb_ctrl_exit(no_rmnet_devs, no_rmnet_insts_per_dev);
 		usb_deregister(&rmnet_usb);
 		err("rmnet_usb_cmux_init failed: %d", retval);
 		return retval;
 	}
 
-	return retval;
+	return 0;
 }
+module_init(rmnet_usb_init);
 
 static void __exit rmnet_usb_exit(void)
 {
+	rmnet_usb_ctrl_exit();
 	usb_deregister(&rmnet_usb);
-	rmnet_usb_ctrl_exit(no_rmnet_devs, no_rmnet_insts_per_dev);
 }
 module_exit(rmnet_usb_exit);
 

@@ -18,6 +18,7 @@
 #define BYTES_PER_BLOCK             (3)
 #define MAX_PS_LENGTH              (96)
 #define MAX_RT_LENGTH              (64)
+#define RX_STATIONS0_LEN           (15)
 
 #define XFRDAT0                    (0x20)
 #define XFRDAT1                    (0x21)
@@ -104,6 +105,7 @@ int tavarua_set_audio_path(int digital_on, int analog_on);
 #define MARIMBA_2_1	0x02010204
 #define BAHAMA_1_0	0x0302010A
 #define BAHAMA_2_0	0x04020205
+#define BAHAMA_2_1      0x04020309
 #define WAIT_TIMEOUT 2000
 #define RADIO_INIT_TIME 15
 #define TAVARUA_DELAY 10

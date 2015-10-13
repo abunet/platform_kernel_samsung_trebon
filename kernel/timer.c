@@ -145,9 +145,11 @@ static unsigned long round_jiffies_common(unsigned long j, int cpu,
 	/* now that we have rounded, subtract the extra skew again */
 	j -= cpu * 3;
 
-	if (j <= jiffies) /* rounding ate our timeout entirely; */
-		return original;
-	return j;
+	/*
+	 * Make sure j is still in the future. Otherwise return the
+	 * unmodified value.
+	 */
+	return time_is_after_jiffies(j) ? j : original;
 }
 
 /**
@@ -586,8 +588,7 @@ static inline void
 debug_activate(struct timer_list *timer, unsigned long expires)
 {
 	debug_timer_activate(timer);
-	trace_timer_start(timer, expires,
-			 tbase_get_deferrable(timer->base) > 0 ? 'y' : 'n');
+	trace_timer_start(timer, expires);
 }
 
 static inline void debug_deactivate(struct timer_list *timer)
@@ -812,9 +813,9 @@ unsigned long apply_slack(struct timer_list *timer, unsigned long expires)
 	if (mask == 0)
 		return expires;
 
-	bit = find_last_bit(&mask, BITS_PER_LONG);
+	bit = __fls(mask);
 
-	mask = (1 << bit) - 1;
+	mask = (1UL << bit) - 1;
 
 	expires_limit = expires_limit & ~(mask);
 
@@ -864,13 +865,7 @@ EXPORT_SYMBOL(mod_timer);
  *
  * mod_timer_pinned() is a way to update the expire field of an
  * active timer (if the timer is inactive it will be activated)
- * and to ensure that the timer is scheduled on the current CPU.
- *
- * Note that this does not prevent the timer from being migrated
- * when the current CPU goes offline.  If this is a problem for
- * you, use CPU-hotplug notifiers to handle it correctly, for
- * example, cancelling the timer when the corresponding CPU goes
- * offline.
+ * and not allow the timer to be migrated to a different CPU.
  *
  * mod_timer_pinned(timer, expires) is equivalent to:
  *

@@ -12,7 +12,6 @@
  */
 
 #include <linux/platform_device.h>
-#include <linux/pm_runtime.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/usb/otg.h>
@@ -32,13 +31,7 @@ static void xhci_plat_quirks(struct device *dev, struct xhci_hcd *xhci)
 	 * here that the generic code does not try to make a pci_dev from our
 	 * dev struct in order to setup MSI
 	 */
-	xhci->quirks |= XHCI_BROKEN_MSI;
-
-	if (!pdata)
-		return;
-	else if (pdata->vendor == SYNOPSIS_DWC3_VENDOR &&
-			pdata->revision < 0x230A)
-		xhci->quirks |= XHCI_PORTSC_DELAY;
+	xhci->quirks |= XHCI_PLAT;
 }
 
 /* called during probe() after chip reset completes */
@@ -132,7 +125,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		goto put_hcd;
 	}
 
-	hcd->regs = ioremap(hcd->rsrc_start, hcd->rsrc_len);
+	hcd->regs = ioremap_nocache(hcd->rsrc_start, hcd->rsrc_len);
 	if (!hcd->regs) {
 		dev_dbg(&pdev->dev, "error mapping memory\n");
 		ret = -EFAULT;
@@ -174,11 +167,6 @@ static int xhci_plat_probe(struct platform_device *pdev)
 			usb_put_transceiver(phy);
 			goto put_usb3_hcd;
 		}
-	} else {
-		pm_runtime_no_callbacks(&pdev->dev);
-		pm_runtime_set_active(&pdev->dev);
-		pm_runtime_enable(&pdev->dev);
-		pm_runtime_get(&pdev->dev);
 	}
 
 	return 0;
@@ -211,15 +199,13 @@ static int xhci_plat_remove(struct platform_device *dev)
 
 	usb_remove_hcd(hcd);
 	iounmap(hcd->regs);
+	release_mem_region(hcd->rsrc_start, hcd->rsrc_len);
 	usb_put_hcd(hcd);
 	kfree(xhci);
 
 	if (phy && phy->otg) {
 		otg_set_host(phy->otg, NULL);
 		usb_put_transceiver(phy);
-	} else {
-		pm_runtime_put(&dev->dev);
-		pm_runtime_disable(&dev->dev);
 	}
 
 	return 0;

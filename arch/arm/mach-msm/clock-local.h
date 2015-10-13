@@ -15,7 +15,7 @@
 #define __ARCH_ARM_MACH_MSM_CLOCK_LOCAL_H
 
 #include <linux/spinlock.h>
-#include <mach/clk-provider.h>
+#include "clock.h"
 
 #define MN_MODE_DUAL_EDGE 0x2
 
@@ -164,7 +164,6 @@ enum handoff branch_handoff(struct branch *b, struct clk *c);
  * Generic clock-definition struct and macros
  */
 struct rcg_clk {
-	bool		prepared;
 	bool		enabled;
 	void		*const ns_reg;
 	void		*const md_reg;

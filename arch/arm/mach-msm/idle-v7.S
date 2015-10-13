@@ -2,7 +2,7 @@
  * Idle processing for ARMv7-based Qualcomm SoCs.
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2007-2009, 2011-2013 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2009, 2011-2012 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -22,7 +22,7 @@
 #include "idle.h"
 #include "idle-macros.S"
 
-#ifdef CONFIG_MSM_SCM
+#ifdef CONFIG_ARCH_MSM_KRAIT
 #define SCM_SVC_BOOT 0x1
 #define SCM_CMD_TERMINATE_PC 0x2
 #endif
@@ -96,8 +96,22 @@ ENTRY(msm_pm_collapse)
 	mrc     p15, 0, r9, c13, c0, 3 /* TPIDRURO */
 	mrc     p15, 0, ip, c13, c0, 1 /* context ID */
 	stmia   r0!, {r1-r9, ip}
+#ifdef CONFIG_MSM_CPU_AVS
+	mrc     p15, 7, r1, c15, c1, 7 /* AVSCSR is the Adaptive Voltage Scaling
+	                                * Control and Status Register */
+	mrc     p15, 7, r2, c15, c0, 6 /* AVSDSCR is the Adaptive Voltage
+	                                * Scaling Delay Synthesizer Control
+					* Register */
+#ifndef CONFIG_ARCH_MSM_KRAIT
+	mrc     p15, 7, r3, c15, c1, 0 /* TSCSR is the Temperature Status and
+	                                * Control Register
+					*/
+#endif
 
-#if defined(CONFIG_MSM_JTAG) || defined(CONFIG_MSM_JTAG_MM)
+	stmia   r0!, {r1-r3}
+#endif
+
+#ifdef CONFIG_MSM_JTAG
 	bl      msm_jtag_save_state
 #endif
 
@@ -113,32 +127,8 @@ ENTRY(msm_pm_collapse)
 	cmp	r1, #1
 	bne	skip
 	bl	v7_flush_dcache_all
-	ldr	r1, =msm_pm_flush_l2_fn
-	ldr	r1, [r1]
-	cmp	r1, #0
-	blxne	r1
-
 skip:
-	ldr	r1, =msm_pm_disable_l2_fn
-	ldr	r1, [r1]
-	cmp	r1, #0
-	blxne	r1
-	dmb
-
-	mrc	p15, 0, r0, c0, c0, 5	/* MPIDR */
-	and	r0, r0, #15		/* what CPU am I */
-
-	ldr	r1, =msm_pc_debug_counters /*load the IMEM debug location */
-	ldr	r1, [r1]
-	cmp	r1, #0
-	beq	skip_pc_debug1
-	add	r1, r1, r0, LSL #4	/* debug location for this CPU */
-	ldr	r2, [r1]
-	add	r2, #1
-	str	r2, [r1]
-skip_pc_debug1:
-
-#ifdef CONFIG_MSM_SCM
+#ifdef CONFIG_ARCH_MSM_KRAIT
 	ldr	r0, =SCM_SVC_BOOT
 	ldr	r1, =SCM_CMD_TERMINATE_PC
 	ldr	r2, =msm_pm_flush_l2_flag
@@ -165,27 +155,7 @@ skip_pc_debug1:
 #if defined(CONFIG_MSM_FIQ_SUPPORT)
 	cpsie   f
 #endif
-	mrc	p15, 0, r0, c0, c0, 5 /* MPIDR */
-	and	r0, r0, #15              /* what CPU am I                  */
-
-	ldr	r1, =msm_pc_debug_counters /*load the IMEM debug location */
-	ldr	r1, [r1]
-	cmp	r1, #0
-	beq	skip_pc_debug2
-	add	r1, r1, r0, LSL #4	/* debug location for this CPU */
-	add	r1, #8
-	ldr	r2, [r1]
-	add	r2, #1
-	str	r2, [r1]
-
-skip_pc_debug2:
-	ldr	r1, =msm_pm_enable_l2_fn
-	ldr	r1, [r1]
-	cmp	r1, #0
-	blxne	r1
-	dmb
-
-#if defined(CONFIG_MSM_JTAG) || defined(CONFIG_MSM_JTAG_MM)
+#ifdef CONFIG_MSM_JTAG
 	bl	msm_jtag_restore_state
 #endif
 	ldr     r0, =msm_saved_state	/* address of msm_saved_state ptr */
@@ -226,6 +196,14 @@ ENTRY(msm_pm_collapse_exit)
 	add	r1, r1, r2
 #endif
 
+#ifdef CONFIG_MSM_CPU_AVS
+	ldmdb   r1!, {r2-r4}
+#ifndef CONFIG_ARCH_MSM_KRAIT
+	mcr     p15, 7, r4, c15, c1, 0 /* TSCSR */
+#endif
+	mcr     p15, 7, r3, c15, c0, 6 /* AVSDSCR */
+	mcr     p15, 7, r2, c15, c1, 7 /* AVSCSR */
+#endif
 	ldmdb   r1!, {r2-r11}
 	mcr     p15, 0, r4, c3, c0, 0 /* dacr */
 	mcr     p15, 0, r3, c2, c0, 0 /* TTBR0 */
@@ -280,16 +258,11 @@ msm_pm_pa_to_va:
 	SET_SMP_COHERENCY ON
 #endif
 
-	ldr	r1, =msm_pm_enable_l2_fn
-	ldr	r1, [r1]
-	cmp	r1, #0
+#ifdef CONFIG_MSM_JTAG
 	stmfd   sp!, {lr}
-	blxne	r1
-	dmb
-#if defined(CONFIG_MSM_JTAG) || defined(CONFIG_MSM_JTAG_MM)
 	bl      msm_jtag_restore_state
-#endif
 	ldmfd   sp!, {lr}
+#endif
 	mov     r0, #1
 	bx      lr
 	nop
@@ -303,22 +276,6 @@ ENTRY(msm_pm_boot_entry)
 	mrc     p15, 0, r0, c0, c0, 5    /* MPIDR                          */
 	and     r0, r0, #15              /* what CPU am I                  */
 
-	ldr	r1, =msm_pc_debug_counters_phys /*phys addr for IMEM reg */
-	ldr	r2, =msm_pm_boot_entry
-	adr	r3, msm_pm_boot_entry
-	add	r1, r1, r3               /* translate virt to phys addr    */
-	sub	r1, r1, r2
-	ldr	r1,[r1]
-
-	cmp	r1, #0
-	beq	skip_pc_debug3
-	add	r1, r1, r0, LSL #4	/* debug location for this CPU */
-	add	r1, #4			/* warmboot entry counter*/
-	ldr	r2, [r1]
-	add	r2, #1
-	str	r2, [r1]
-
-skip_pc_debug3:
 	ldr     r1, =msm_pm_boot_vector
 	ldr     r2, =msm_pm_boot_entry
 	adr     r3, msm_pm_boot_entry
@@ -329,14 +286,9 @@ skip_pc_debug3:
 	ldr     pc, [r1]                 /* jump                           */
 
 ENTRY(msm_pm_set_l2_flush_flag)
-	ldr     r1, =msm_pm_flush_l2_flag
-	str     r0, [r1]
-	bx      lr
-
-ENTRY(msm_pm_get_l2_flush_flag)
-	ldr     r1, =msm_pm_flush_l2_flag
-	ldr     r0, [r1]
-	bx      lr
+	ldr r1, =msm_pm_flush_l2_flag
+	str r0, [r1]
+	bx lr
 
 	.data
 
@@ -366,26 +318,6 @@ apps_power_collapse:
 
 	.globl l2x0_base_addr
 l2x0_base_addr:
-	.long 0x0
-
-	.globl msm_pc_debug_counters_phys
-msm_pc_debug_counters_phys:
-	.long 0x0
-
-	.globl msm_pc_debug_counters
-msm_pc_debug_counters:
-	.long 0x0
-
-	.globl msm_pm_enable_l2_fn
-msm_pm_enable_l2_fn:
-	.long 0x0
-
-	.globl msm_pm_disable_l2_fn
-msm_pm_disable_l2_fn:
-	.long 0x0
-
-	.globl msm_pm_flush_l2_fn
-msm_pm_flush_l2_fn:
 	.long 0x0
 
 /*

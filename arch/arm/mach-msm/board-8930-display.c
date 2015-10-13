@@ -22,7 +22,7 @@
 #include <mach/board.h>
 #include <mach/gpiomux.h>
 #include <mach/socinfo.h>
-#include <linux/msm_ion.h>
+#include <linux/ion.h>
 #include <mach/ion.h>
 
 #include "devices.h"
@@ -67,19 +67,25 @@ static struct resource msm_fb_resources[] = {
 	}
 };
 
+static struct mipi_dsi_platform_data mipi_dsi_pdata;
+
 static int msm_fb_detect_panel(const char *name)
 {
 	if (!strncmp(name, MIPI_CMD_NOVATEK_QHD_PANEL_NAME,
 			strnlen(MIPI_CMD_NOVATEK_QHD_PANEL_NAME,
-				PANEL_NAME_MAX_LEN)))
+				PANEL_NAME_MAX_LEN))) {
+		mipi_dsi_pdata.dlane_swap = 0x1;
 		return 0;
+	}
 
 #if !defined(CONFIG_FB_MSM_LVDS_MIPI_PANEL_DETECT) && \
 	!defined(CONFIG_FB_MSM_MIPI_PANEL_DETECT)
 	if (!strncmp(name, MIPI_VIDEO_NOVATEK_QHD_PANEL_NAME,
 			strnlen(MIPI_VIDEO_NOVATEK_QHD_PANEL_NAME,
-				PANEL_NAME_MAX_LEN)))
+				PANEL_NAME_MAX_LEN))) {
+		mipi_dsi_pdata.dlane_swap = 0x1;
 		return 0;
+	}
 
 	if (!strncmp(name, MIPI_VIDEO_TOSHIBA_WSVGA_PANEL_NAME,
 			strnlen(MIPI_VIDEO_TOSHIBA_WSVGA_PANEL_NAME,
@@ -93,8 +99,10 @@ static int msm_fb_detect_panel(const char *name)
 
 	if (!strncmp(name, MIPI_CMD_RENESAS_FWVGA_PANEL_NAME,
 			strnlen(MIPI_CMD_RENESAS_FWVGA_PANEL_NAME,
-				PANEL_NAME_MAX_LEN)))
+				PANEL_NAME_MAX_LEN))) {
+		mipi_dsi_pdata.dlane_swap = 0x1;
 		return 0;
+	}
 #endif
 
 	if (!strncmp(name, HDMI_PANEL_NAME,
@@ -124,15 +132,6 @@ static struct platform_device msm_fb_device = {
 };
 
 static bool dsi_power_on;
-static struct mipi_dsi_panel_platform_data novatek_pdata;
-static void pm8917_gpio_set_backlight(int bl_level)
-{
-	int gpio24 = PM8917_GPIO_PM_TO_SYS(24);
-	if (bl_level > 0)
-		gpio_set_value_cansleep(gpio24, 1);
-	else
-		gpio_set_value_cansleep(gpio24, 0);
-}
 
 /*
  * TODO: When physical 8930/PM8038 hardware becomes
@@ -140,12 +139,9 @@ static void pm8917_gpio_set_backlight(int bl_level)
  * appropriate function.
  */
 #define DISP_RST_GPIO 58
-#define DISP_3D_2D_MODE 1
 static int mipi_dsi_cdp_panel_power(int on)
 {
 	static struct regulator *reg_l8, *reg_l23, *reg_l2;
-	/* Control backlight GPIO (24) directly when using PM8917 */
-	int gpio24 = PM8917_GPIO_PM_TO_SYS(24);
 	int rc;
 
 	pr_debug("%s: state : %d\n", __func__, on);
@@ -195,33 +191,8 @@ static int mipi_dsi_cdp_panel_power(int on)
 			gpio_free(DISP_RST_GPIO);
 			return -ENODEV;
 		}
-		rc = gpio_request(DISP_3D_2D_MODE, "disp_3d_2d");
-		if (rc) {
-			pr_err("request gpio DISP_3D_2D_MODE failed, rc=%d\n",
-				 rc);
-			gpio_free(DISP_3D_2D_MODE);
-			return -ENODEV;
-		}
-		rc = gpio_direction_output(DISP_3D_2D_MODE, 0);
-		if (rc) {
-			pr_err("gpio_direction_output failed for %d gpio rc=%d\n",
-			DISP_3D_2D_MODE, rc);
-			return -ENODEV;
-		}
-		if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917) {
-			rc = gpio_request(gpio24, "disp_bl");
-			if (rc) {
-				pr_err("request for gpio 24 failed, rc=%d\n",
-					rc);
-				return -ENODEV;
-			}
-			gpio_set_value_cansleep(gpio24, 0);
-			novatek_pdata.gpio_set_backlight =
-				pm8917_gpio_set_backlight;
-		}
 		dsi_power_on = true;
 	}
-
 	if (on) {
 		rc = regulator_set_optimum_mode(reg_l8, 100000);
 		if (rc < 0) {
@@ -259,8 +230,6 @@ static int mipi_dsi_cdp_panel_power(int on)
 		gpio_set_value(DISP_RST_GPIO, 0);
 		usleep(20);
 		gpio_set_value(DISP_RST_GPIO, 1);
-		gpio_set_value(DISP_3D_2D_MODE, 1);
-		usleep(20);
 	} else {
 
 		gpio_set_value(DISP_RST_GPIO, 0);
@@ -295,8 +264,6 @@ static int mipi_dsi_cdp_panel_power(int on)
 			pr_err("set_optimum_mode l2 failed, rc=%d\n", rc);
 			return -EINVAL;
 		}
-		gpio_set_value(DISP_3D_2D_MODE, 0);
-		usleep(20);
 	}
 	return 0;
 }
@@ -311,6 +278,7 @@ static int mipi_dsi_panel_power(int on)
 static struct mipi_dsi_platform_data mipi_dsi_pdata = {
 	.vsync_gpio = MDP_VSYNC_GPIO,
 	.dsi_power_save = mipi_dsi_panel_power,
+	.dlane_swap = 0x0,
 };
 
 #ifdef CONFIG_MSM_BUS_SCALING
@@ -439,13 +407,10 @@ static struct msm_bus_scale_pdata mdp_bus_scale_pdata = {
 static struct msm_panel_common_pdata mdp_pdata = {
 	.gpio = MDP_VSYNC_GPIO,
 	.mdp_max_clk = 200000000,
-	.mdp_max_bw = 2000000000,
-	.mdp_bw_ab_factor = 115,
-	.mdp_bw_ib_factor = 150,
 #ifdef CONFIG_MSM_BUS_SCALING
 	.mdp_bus_scale_table = &mdp_bus_scale_pdata,
 #endif
-	.mdp_rev = MDP_REV_43,
+	.mdp_rev = MDP_REV_42,
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 	.mem_hid = BIT(ION_CP_MM_HEAP_ID),
 #else
@@ -486,23 +451,22 @@ static struct platform_device mipi_dsi_toshiba_panel_device = {
 static struct mipi_dsi_phy_ctrl dsi_novatek_cmd_mode_phy_db = {
 
 /* DSI_BIT_CLK at 500MHz, 2 lane, RGB888 */
-	{0x09, 0x08, 0x05, 0x00, 0x20},	/* regulator */
+	{0x0F, 0x0a, 0x04, 0x00, 0x20},	/* regulator */
 	/* timing   */
 	{0xab, 0x8a, 0x18, 0x00, 0x92, 0x97, 0x1b, 0x8c,
 	0x0c, 0x03, 0x04, 0xa0},
 	{0x5f, 0x00, 0x00, 0x10},	/* phy ctrl */
 	{0xff, 0x00, 0x06, 0x00},	/* strength */
 	/* pll control */
-	{0x0, 0xe, 0x30, 0xda, 0x00, 0x10, 0x0f, 0x61,
+	{0x40, 0xf9, 0x30, 0xda, 0x00, 0x40, 0x03, 0x62,
 	0x40, 0x07, 0x03,
-	0x00, 0x1a, 0x00, 0x00, 0x02, 0x00, 0x20, 0x00, 0x02},
+	0x00, 0x1a, 0x00, 0x00, 0x02, 0x00, 0x20, 0x00, 0x01},
 };
 
 static struct mipi_dsi_panel_platform_data novatek_pdata = {
 	.fpga_3d_config_addr  = FPGA_3D_GPIO_CONFIG_ADDR,
 	.fpga_ctrl_mode = FPGA_SPI_INTF,
 	.phy_ctrl_settings = &dsi_novatek_cmd_mode_phy_db,
-	.dlane_swap = 0x1,
 	.enable_wled_bl_ctrl = 0x1,
 };
 

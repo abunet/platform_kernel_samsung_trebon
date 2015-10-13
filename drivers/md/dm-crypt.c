@@ -42,7 +42,7 @@ struct convert_context {
 	unsigned int idx_in;
 	unsigned int idx_out;
 	sector_t sector;
-	atomic_t pending;
+	atomic_t cc_pending;
 	struct ablkcipher_request *req;
 };
 
@@ -56,7 +56,7 @@ struct dm_crypt_io {
 
 	struct convert_context ctx;
 
-	atomic_t pending;
+	atomic_t io_pending;
 	int error;
 	sector_t sector;
 	struct dm_crypt_io *base_io;
@@ -740,14 +740,14 @@ static int crypt_convert(struct crypt_config *cc,
 {
 	int r;
 
-	atomic_set(&ctx->pending, 1);
+	atomic_set(&ctx->cc_pending, 1);
 
 	while(ctx->idx_in < ctx->bio_in->bi_vcnt &&
 	      ctx->idx_out < ctx->bio_out->bi_vcnt) {
 
 		crypt_alloc_req(cc, ctx);
 
-		atomic_inc(&ctx->pending);
+		atomic_inc(&ctx->cc_pending);
 
 		r = crypt_convert_block(cc, ctx, ctx->req);
 
@@ -764,14 +764,14 @@ static int crypt_convert(struct crypt_config *cc,
 
 		/* sync */
 		case 0:
-			atomic_dec(&ctx->pending);
+			atomic_dec(&ctx->cc_pending);
 			ctx->sector++;
 			cond_resched();
 			continue;
 
 		/* error */
 		default:
-			atomic_dec(&ctx->pending);
+			atomic_dec(&ctx->cc_pending);
 			return r;
 		}
 	}
@@ -868,14 +868,14 @@ static struct dm_crypt_io *crypt_io_alloc(struct dm_target *ti,
 	io->error = 0;
 	io->base_io = NULL;
 	io->ctx.req = NULL;
-	atomic_set(&io->pending, 0);
+	atomic_set(&io->io_pending, 0);
 
 	return io;
 }
 
 static void crypt_inc_pending(struct dm_crypt_io *io)
 {
-	atomic_inc(&io->pending);
+	atomic_inc(&io->io_pending);
 }
 
 /*
@@ -890,7 +890,7 @@ static void crypt_dec_pending(struct dm_crypt_io *io)
 	struct dm_crypt_io *base_io = io->base_io;
 	int error = io->error;
 
-	if (!atomic_dec_and_test(&io->pending))
+	if (!atomic_dec_and_test(&io->io_pending))
 		return;
 
 	if (io->ctx.req)
@@ -1080,8 +1080,7 @@ static void kcryptd_crypt_write_convert(struct dm_crypt_io *io)
 		r = crypt_convert(cc, &io->ctx);
 		if (r < 0)
 			io->error = -EIO;
-
-		crypt_finished = atomic_dec_and_test(&io->ctx.pending);
+		crypt_finished = atomic_dec_and_test(&io->ctx.cc_pending);
 
 		/* Encryption was already finished, submit io now */
 		if (crypt_finished) {
@@ -1152,10 +1151,11 @@ static void kcryptd_crypt_read_convert(struct dm_crypt_io *io)
 			   io->sector);
 
 	r = crypt_convert(cc, &io->ctx);
+
 	if (r < 0)
 		io->error = -EIO;
 
-	if (atomic_dec_and_test(&io->ctx.pending))
+	if (atomic_dec_and_test(&io->ctx.cc_pending))
 		kcryptd_crypt_read_done(io);
 
 	crypt_dec_pending(io);
@@ -1182,7 +1182,7 @@ static void kcryptd_async_done(struct crypto_async_request *async_req,
 
 	mempool_free(req_of_dmreq(cc, dmreq), cc->req_pool);
 
-	if (!atomic_dec_and_test(&ctx->pending))
+	if (!atomic_dec_and_test(&ctx->cc_pending))
 		return;
 
 	if (bio_data_dir(io->base_bio) == READ)
@@ -1234,20 +1234,6 @@ static int crypt_decode_key(u8 *key, char *hex, unsigned int size)
 		return -EINVAL;
 
 	return 0;
-}
-
-/*
- * Encode key into its hex representation
- */
-static void crypt_encode_key(char *hex, u8 *key, unsigned int size)
-{
-	unsigned int i;
-
-	for (i = 0; i < size; i++) {
-		sprintf(hex, "%02x", *key);
-		hex += 2;
-		key++;
-	}
 }
 
 static void crypt_free_tfms(struct crypt_config *cc)
@@ -1538,6 +1524,7 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	unsigned int key_size, opt_params;
 	unsigned long long tmpll;
 	int ret;
+	size_t iv_size_padding;
 	struct dm_arg_set as;
 	const char *opt_string;
 	char dummy;
@@ -1574,12 +1561,23 @@ static int crypt_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	cc->dmreq_start = sizeof(struct ablkcipher_request);
 	cc->dmreq_start += crypto_ablkcipher_reqsize(any_tfm(cc));
-	cc->dmreq_start = ALIGN(cc->dmreq_start, crypto_tfm_ctx_alignment());
-	cc->dmreq_start += crypto_ablkcipher_alignmask(any_tfm(cc)) &
-			   ~(crypto_tfm_ctx_alignment() - 1);
+	cc->dmreq_start = ALIGN(cc->dmreq_start, __alignof__(struct dm_crypt_request));
+
+	if (crypto_ablkcipher_alignmask(any_tfm(cc)) < CRYPTO_MINALIGN) {
+		/* Allocate the padding exactly */
+		iv_size_padding = -(cc->dmreq_start + sizeof(struct dm_crypt_request))
+				& crypto_ablkcipher_alignmask(any_tfm(cc));
+	} else {
+		/*
+		 * If the cipher requires greater alignment than kmalloc
+		 * alignment, we don't know the exact position of the
+		 * initialization vector. We must assume worst case.
+		 */
+		iv_size_padding = crypto_ablkcipher_alignmask(any_tfm(cc));
+	}
 
 	cc->req_pool = mempool_create_kmalloc_pool(MIN_IOS, cc->dmreq_start +
-			sizeof(struct dm_crypt_request) + cc->iv_size);
+			sizeof(struct dm_crypt_request) + iv_size_padding + cc->iv_size);
 	if (!cc->req_pool) {
 		ti->error = "Cannot allocate crypt request mempool";
 		goto bad;
@@ -1699,11 +1697,11 @@ static int crypt_map(struct dm_target *ti, struct bio *bio,
 	return DM_MAPIO_SUBMITTED;
 }
 
-static int crypt_status(struct dm_target *ti, status_type_t type,
-			char *result, unsigned int maxlen)
+static void crypt_status(struct dm_target *ti, status_type_t type,
+			 char *result, unsigned int maxlen)
 {
 	struct crypt_config *cc = ti->private;
-	unsigned int sz = 0;
+	unsigned i, sz = 0;
 
 	switch (type) {
 	case STATUSTYPE_INFO:
@@ -1713,17 +1711,11 @@ static int crypt_status(struct dm_target *ti, status_type_t type,
 	case STATUSTYPE_TABLE:
 		DMEMIT("%s ", cc->cipher_string);
 
-		if (cc->key_size > 0) {
-			if ((maxlen - sz) < ((cc->key_size << 1) + 1))
-				return -ENOMEM;
-
-			crypt_encode_key(result + sz, cc->key, cc->key_size);
-			sz += cc->key_size << 1;
-		} else {
-			if (sz >= maxlen)
-				return -ENOMEM;
-			result[sz++] = '-';
-		}
+		if (cc->key_size > 0)
+			for (i = 0; i < cc->key_size; i++)
+				DMEMIT("%02x", cc->key[i]);
+		else
+			DMEMIT("-");
 
 		DMEMIT(" %llu %s %llu", (unsigned long long)cc->iv_offset,
 				cc->dev->name, (unsigned long long)cc->start);
@@ -1733,7 +1725,6 @@ static int crypt_status(struct dm_target *ti, status_type_t type,
 
 		break;
 	}
-	return 0;
 }
 
 static void crypt_postsuspend(struct dm_target *ti)

@@ -46,6 +46,7 @@ void gic_secondary_init(unsigned int);
 void gic_handle_irq(struct pt_regs *regs);
 void gic_cascade_irq(unsigned int gic_nr, unsigned int irq);
 void gic_raise_softirq(const struct cpumask *mask, unsigned int irq);
+void gic_raise_secure_softirq(const struct cpumask *mask, unsigned int irq);
 bool gic_is_irq_pending(unsigned int irq);
 void gic_clear_irq_pending(unsigned int irq);
 #ifdef CONFIG_ARM_GIC
@@ -58,10 +59,11 @@ static inline void gic_init(unsigned int nr, int start,
 {
 	gic_init_bases(nr, start, dist, cpu, 0, NULL);
 }
+void gic_set_irq_secure(unsigned int irq);
 
 void msm_gic_save(void);
 void msm_gic_restore(void);
-void core1_gic_configure_and_raise(void);
+void gic_configure_and_raise(unsigned int irq, unsigned int cpu);
 #endif
 
 #endif

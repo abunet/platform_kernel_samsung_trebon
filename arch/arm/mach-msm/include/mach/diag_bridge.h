@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,31 +23,32 @@ struct diag_bridge_ops {
 	void (*resume)(void *ctxt);
 };
 
-#if IS_ENABLED(CONFIG_USB_QCOM_DIAG_BRIDGE)
+#if defined(CONFIG_USB_QCOM_DIAG_BRIDGE) \
+	|| defined(CONFIG_USB_QCOM_DIAG_BRIDGE_MODULE)
 
-extern int diag_bridge_read(int id, char *data, int size);
-extern int diag_bridge_write(int id, char *data, int size);
-extern int diag_bridge_open(int id, struct diag_bridge_ops *ops);
-extern void diag_bridge_close(int id);
+extern int diag_bridge_read(char *data, int size);
+extern int diag_bridge_write(char *data, int size);
+extern int diag_bridge_open(struct diag_bridge_ops *ops);
+extern void diag_bridge_close(void);
 
 #else
 
-static int __maybe_unused diag_bridge_read(int id, char *data, int size)
+static int __maybe_unused diag_bridge_read(char *data, int size)
 {
 	return -ENODEV;
 }
 
-static int __maybe_unused diag_bridge_write(int id, char *data, int size)
+static int __maybe_unused diag_bridge_write(char *data, int size)
 {
 	return -ENODEV;
 }
 
-static int __maybe_unused diag_bridge_open(int id, struct diag_bridge_ops *ops)
+static int __maybe_unused diag_bridge_open(struct diag_bridge_ops *ops)
 {
 	return -ENODEV;
 }
 
-static void __maybe_unused diag_bridge_close(int id) { }
+static void __maybe_unused diag_bridge_close(void) { }
 
 #endif
 

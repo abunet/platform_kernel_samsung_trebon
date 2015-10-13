@@ -252,15 +252,7 @@ union reg_cp_rb_cntl {
 #define REG_CP_CSQ_IB1_STAT              0x01FE
 #define REG_CP_CSQ_IB2_STAT              0x01FF
 #define REG_CP_CSQ_RB_STAT               0x01FD
-
 #define REG_CP_DEBUG                     0x01FC
-/*
- * CP DEBUG settings for a3xx and a2xx cores:
- * DYNAMIC_CLK_DISABLE [27] - turn off the dynamic clock control
- * MIU_128BIT_WRITE_ENABLE [25] - Allow 128 bit writes to the VBIF
- */
-#define A2XX_CP_DEBUG_DEFAULT ((1 << 27) | (1 << 25))
-
 #define REG_CP_IB1_BASE                  0x0458
 #define REG_CP_IB1_BUFSZ                 0x0459
 #define REG_CP_IB2_BASE                  0x045A
@@ -349,6 +341,7 @@ union reg_cp_rb_cntl {
 #define REG_RB_MODECONTROL               0x2208
 #define REG_RB_SURFACE_INFO              0x2000
 #define REG_RB_SAMPLE_POS                0x220a
+#define REG_RB_BC_CONTROL                0x0F01
 
 #define REG_SCRATCH_ADDR                 0x01DD
 #define REG_SCRATCH_REG0                 0x0578

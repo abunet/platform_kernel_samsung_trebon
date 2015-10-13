@@ -2,7 +2,7 @@
  * drivers/gpu/ion/ion_system_heap.c
  *
  * Copyright (C) 2011 Google, Inc.
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,8 +27,6 @@
 #include "ion_priv.h"
 #include <mach/memory.h>
 #include <asm/cacheflush.h>
-#include <linux/msm_ion.h>
-#include <linux/dma-mapping.h>
 
 static atomic_t system_heap_allocated;
 static atomic_t system_contig_heap_allocated;
@@ -53,7 +51,7 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 		goto err0;
 	for_each_sg(table->sgl, sg, table->nents, i) {
 		struct page *page;
-		page = alloc_page(GFP_KERNEL);
+		page = alloc_page(GFP_KERNEL|__GFP_ZERO);
 		if (!page)
 			goto err1;
 		sg_set_page(sg, page, PAGE_SIZE, 0);
@@ -185,30 +183,15 @@ int ion_system_heap_cache_ops(struct ion_heap *heap, struct ion_buffer *buffer,
 
 	switch (cmd) {
 	case ION_IOC_CLEAN_CACHES:
-		if (!vaddr)
-			dma_sync_sg_for_device(NULL, buffer->sg_table->sgl,
-				buffer->sg_table->nents, DMA_TO_DEVICE);
-		else
-			dmac_clean_range(vaddr, vaddr + length);
+		dmac_clean_range(vaddr, vaddr + length);
 		outer_cache_op = outer_clean_range;
 		break;
 	case ION_IOC_INV_CACHES:
-		if (!vaddr)
-			dma_sync_sg_for_cpu(NULL, buffer->sg_table->sgl,
-				buffer->sg_table->nents, DMA_FROM_DEVICE);
-		else
-			dmac_inv_range(vaddr, vaddr + length);
+		dmac_inv_range(vaddr, vaddr + length);
 		outer_cache_op = outer_inv_range;
 		break;
 	case ION_IOC_CLEAN_INV_CACHES:
-		if (!vaddr) {
-			dma_sync_sg_for_device(NULL, buffer->sg_table->sgl,
-				buffer->sg_table->nents, DMA_TO_DEVICE);
-			dma_sync_sg_for_cpu(NULL, buffer->sg_table->sgl,
-				buffer->sg_table->nents, DMA_FROM_DEVICE);
-		} else {
-			dmac_flush_range(vaddr, vaddr + length);
-		}
+		dmac_flush_range(vaddr, vaddr + length);
 		outer_cache_op = outer_flush_range;
 		break;
 	default:
@@ -271,14 +254,6 @@ int ion_system_heap_map_iommu(struct ion_buffer *buffer,
 	data->mapped_size = iova_length;
 	extra = iova_length - buffer->size;
 
-	/* Use the biggest alignment to allow bigger IOMMU mappings.
-	 * Use the first entry since the first entry will always be the
-	 * biggest entry. To take advantage of bigger mapping sizes both the
-	 * VA and PA addresses have to be aligned to the biggest size.
-	 */
-	if (table->sgl->length > align)
-		align = table->sgl->length;
-
 	ret = msm_allocate_iova_address(domain_num, partition_num,
 						data->mapped_size, align,
 						&data->iova_addr);
@@ -304,9 +279,8 @@ int ion_system_heap_map_iommu(struct ion_buffer *buffer,
 
 	extra_iova_addr = data->iova_addr + buffer->size;
 	if (extra) {
-		unsigned long phys_addr = sg_phys(table->sgl);
-		ret = msm_iommu_map_extra(domain, extra_iova_addr, phys_addr,
-					extra, SZ_4K, prot);
+		ret = msm_iommu_map_extra(domain, extra_iova_addr, extra, SZ_4K,
+					  prot);
 		if (ret)
 			goto out2;
 	}
@@ -525,9 +499,8 @@ int ion_system_contig_heap_map_iommu(struct ion_buffer *buffer,
 
 	if (extra) {
 		unsigned long extra_iova_addr = data->iova_addr + buffer->size;
-		unsigned long phys_addr = sg_phys(sglist);
-		ret = msm_iommu_map_extra(domain, extra_iova_addr, phys_addr,
-					extra, SZ_4K, prot);
+		ret = msm_iommu_map_extra(domain, extra_iova_addr, extra, SZ_4K,
+					  prot);
 		if (ret)
 			goto out2;
 	}

@@ -17,14 +17,13 @@
 / {
 	model = "Qualcomm MSM 8974 RUMI";
 	compatible = "qcom,msm8974-rumi", "qcom,msm8974";
-	qcom,msm-id = <126 15 0>;
 
 	timer {
 		clock-frequency = <5000000>;
 	};
 
-	serial@f995e000 {
-		status = "ok";
+	serial@f991f000 {
+		status = "disable";
 	};
 
 	usb@f9a55000 {
@@ -89,10 +88,6 @@
 		status = "disable";
 	};
 
-	qcom,mdss_dsi@fd922800 {
-		status = "disable";
-	};
-
 	qcom,spmi@fc4c0000 {
 		status = "disable";
 	};
@@ -106,10 +101,6 @@
 	};
 
 	qcom,pronto@fb21b000 {
-		status = "disable";
-	};
-
-	qcom,mss@fc880000 {
 		status = "disable";
 	};
 };

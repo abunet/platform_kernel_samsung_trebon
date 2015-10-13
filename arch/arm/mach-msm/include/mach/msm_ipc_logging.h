@@ -185,47 +185,47 @@ int add_deserialization_func(void *ctxt, int type,
 				      struct decode_context *));
 #else
 
-static __always_inline void *ipc_log_context_create(int max_num_pages, const char *modname)
+void *ipc_log_context_create(int max_num_pages, const char *modname)
 { return NULL; }
 
-static __always_inline void msg_encode_start(struct encode_context *ectxt, uint32_t type) { }
+void msg_encode_start(struct encode_context *ectxt, uint32_t type) { }
 
-static __always_inline int tsv_timestamp_write(struct encode_context *ectxt)
+int tsv_timestamp_write(struct encode_context *ectxt)
 { return -EINVAL; }
 
-static __always_inline int tsv_pointer_write(struct encode_context *ectxt, void *pointer)
+int tsv_pointer_write(struct encode_context *ectxt, void *pointer)
 { return -EINVAL; }
 
-static __always_inline int tsv_int32_write(struct encode_context *ectxt, int32_t n)
+int tsv_int32_write(struct encode_context *ectxt, int32_t n)
 { return -EINVAL; }
 
-static __always_inline int tsv_byte_array_write(struct encode_context *ectxt,
+int tsv_byte_array_write(struct encode_context *ectxt,
 			 void *data, int data_size)
 { return -EINVAL; }
 
-static __always_inline void msg_encode_end(struct encode_context *ectxt) { }
+void msg_encode_end(struct encode_context *ectxt) { }
 
-static __always_inline void ipc_log_write(void *ctxt, struct encode_context *ectxt) { }
+void ipc_log_write(void *ctxt, struct encode_context *ectxt) { }
 
-static __always_inline int ipc_log_string(void *ilctxt, const char *fmt, ...)
+int ipc_log_string(void *ilctxt, const char *fmt, ...)
 { return -EINVAL; }
 
 #define IPC_SPRINTF_DECODE(dctxt, args...) do { } while (0)
 
-static __always_inline void tsv_timestamp_read(struct encode_context *ectxt,
+void tsv_timestamp_read(struct encode_context *ectxt,
 			struct decode_context *dctxt, const char *format) { }
 
-static __always_inline void tsv_pointer_read(struct encode_context *ectxt,
+void tsv_pointer_read(struct encode_context *ectxt,
 		      struct decode_context *dctxt, const char *format) { }
 
-static __always_inline int32_t tsv_int32_read(struct encode_context *ectxt,
+int32_t tsv_int32_read(struct encode_context *ectxt,
 		       struct decode_context *dctxt, const char *format)
 { return 0; }
 
-static __always_inline void tsv_byte_array_read(struct encode_context *ectxt,
+void tsv_byte_array_read(struct encode_context *ectxt,
 			 struct decode_context *dctxt, const char *format) { }
 
-static __always_inline int add_deserialization_func(void *ctxt, int type,
+int add_deserialization_func(void *ctxt, int type,
 			void (*dfunc)(struct encode_context *,
 				      struct decode_context *))
 { return 0; }

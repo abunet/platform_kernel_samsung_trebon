@@ -322,7 +322,6 @@ struct msm_spi {
 	/* SPI CS GPIOs for each slave */
 	struct spi_cs_gpio       cs_gpios[ARRAY_SIZE(spi_cs_rsrcs)];
 	int                      qup_ver;
-	int			 max_trfr_len;
 };
 
 /* Forward declaration */

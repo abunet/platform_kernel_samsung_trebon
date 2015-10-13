@@ -25,7 +25,7 @@ struct mmc_bus_ops {
 	int (*power_save)(struct mmc_host *);
 	int (*power_restore)(struct mmc_host *);
 	int (*alive)(struct mmc_host *);
-	int (*change_bus_speed)(struct mmc_host *, unsigned long *);
+	int (*poweroff_notify)(struct mmc_host *, int notify);
 };
 
 void mmc_attach_bus(struct mmc_host *host, const struct mmc_bus_ops *ops);
@@ -48,7 +48,6 @@ int mmc_set_signal_voltage(struct mmc_host *host, int signal_voltage,
 void mmc_set_timing(struct mmc_host *host, unsigned int timing);
 void mmc_set_driver_type(struct mmc_host *host, unsigned int drv_type);
 void mmc_power_off(struct mmc_host *host);
-void mmc_force_poweroff_notify(struct mmc_host *host);
 
 static inline void mmc_delay(unsigned int ms)
 {
@@ -72,9 +71,6 @@ int mmc_attach_mmc(struct mmc_host *host);
 int mmc_attach_sd(struct mmc_host *host);
 int mmc_attach_sdio(struct mmc_host *host);
 
-int force_poweroff_notify(struct notifier_block *notify_block,
-			unsigned long mode, void *unused);
-
 /* Module parameters */
 extern bool use_spi_crc;
 
@@ -85,11 +81,5 @@ void mmc_remove_host_debugfs(struct mmc_host *host);
 void mmc_add_card_debugfs(struct mmc_card *card);
 void mmc_remove_card_debugfs(struct mmc_card *card);
 
-extern void mmc_disable_clk_scaling(struct mmc_host *host);
-extern bool mmc_can_scale_clk(struct mmc_host *host);
-extern void mmc_init_clk_scaling(struct mmc_host *host);
-extern void mmc_exit_clk_scaling(struct mmc_host *host);
-extern void mmc_reset_clk_scale_stats(struct mmc_host *host);
-extern unsigned long mmc_get_max_frequency(struct mmc_host *host);
-void mmc_init_context_info(struct mmc_host *host);
 #endif
+
